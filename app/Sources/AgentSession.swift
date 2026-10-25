@@ -11,6 +11,8 @@ struct AgentContext {
     var maxTokens: Int
     /// MTP-Spekulation für diese Aufgabe (bei "Automatisch" nur für Code).
     var mtp = true
+    /// Gesprächsmodus: Antwort wird vorgelesen.
+    var spoken = false
 }
 
 /// Ein Gespräch mit dem lokalen Modell. Im Agent-Modus darf das Modell Werkzeuge aufrufen;
@@ -109,7 +111,10 @@ final class AgentSession {
                 text = cmd.expand(parts.count > 1 ? parts[1] : "")
             }
         }
-        if history.isEmpty { history.append(["role": "system", "content": systemPrompt(tools: tools, context: context)]) }
+        // Systemprompt bei jeder Nachricht aktualisieren (Werkzeuge, Skills oder Gesprächsmodus können sich ändern);
+        // bleibt er gleich, nutzt der Prompt-Cache weiter denselben Anfang.
+        let system: [String: Any] = ["role": "system", "content": systemPrompt(tools: tools, context: context)]
+        if history.isEmpty { history.append(system) } else if history[0]["role"] as? String == "system" { history[0] = system }
         items.append(Item(kind: .user(shown, images: images)))
         if images.isEmpty {
             history.append(["role": "user", "content": text])
@@ -169,6 +174,9 @@ final class AgentSession {
             s += "\n\n## Gedächtnis\nMit remember/forget pflegst du dauerhafte Notizen über den Nutzer."
             if !memory.isEmpty { s += " Bisher gemerkt:\n\(memory.suffix(4000))" }
         }
+        if context.spoken {
+            s += "\n\n## Gesprächsmodus\nDeine Antwort wird vorgelesen. Antworte natürlich, kurz (meist 1–4 Sätze) und ohne Tabellen, Code-Blöcke, Aufzählungszeichen oder Links. Wenn du Werkzeuge nutzt, fasse das Ergebnis mündlich zusammen."
+        }
         if !context.customInstructions.isEmpty {
             s += "\n\n## Anweisungen des Nutzers\n\(context.customInstructions)"
         }
@@ -181,8 +189,8 @@ final class AgentSession {
         let specs = tools.map(\.openAISpec)
         for _ in 0..<context.maxSteps {
             if Task.isCancelled { return }
-            let index = items.count
-            items.append(Item(kind: .assistant(text: "", thinking: "", stats: nil)))
+            let itemID = UUID()
+            items.append(Item(id: itemID, kind: .assistant(text: "", thinking: "", stats: nil)))
             var text = "", thought = ""
             var calls: [LLMClient.ToolCall] = []
             var rawBlocks: [[String: Any]]?
@@ -207,7 +215,7 @@ final class AgentSession {
                     if let f = tFirst, now.timeIntervalSince(f) > 0.3 {
                         liveTokPerSec = Double(chunks - 1) / now.timeIntervalSince(f)
                     }
-                    items[index].kind = .assistant(text: text, thinking: thought, stats: nil)
+                    setKind(itemID, .assistant(text: text, thinking: thought, stats: nil))
                 }
             } catch {
                 if !Task.isCancelled { items.append(Item(kind: .error(error.localizedDescription))) }
@@ -220,9 +228,9 @@ final class AgentSession {
             let stats = Stats(model: model, tokens: tokens, tokPerSec: decode > 0 ? Double(max(tokens - 1, 0)) / decode : 0,
                               promptTokens: prompt, ttft: (tFirst ?? end).timeIntervalSince(t0))
             if text.isEmpty && thought.isEmpty && !calls.isEmpty {
-                items.remove(at: index)
+                items.removeAll { $0.id == itemID }
             } else {
-                items[index].kind = .assistant(text: text, thinking: thought, stats: stats)
+                setKind(itemID, .assistant(text: text, thinking: thought, stats: stats))
             }
 
             var assistant: [String: Any] = ["role": "assistant", "content": text]
@@ -246,11 +254,11 @@ final class AgentSession {
 
     private func execute(_ call: LLMClient.ToolCall, tools: [AgentTool]) async -> String {
         let tool = tools.first { $0.name == call.name }
-        let index = items.count
+        let itemID = UUID()
         let args = prettyJSON(call.arguments)
-        items.append(Item(kind: .tool(name: call.name, source: tool?.source ?? "?", arguments: args, state: .running, result: "")))
+        items.append(Item(id: itemID, kind: .tool(name: call.name, source: tool?.source ?? "?", arguments: args, state: .running, result: "")))
         func update(_ state: ToolState, _ result: String) {
-            items[index].kind = .tool(name: call.name, source: tool?.source ?? "?", arguments: args, state: state, result: result)
+            setKind(itemID, .tool(name: call.name, source: tool?.source ?? "?", arguments: args, state: state, result: result))
         }
         guard let tool else {
             update(.failed, "Unbekanntes Werkzeug")
@@ -261,8 +269,7 @@ final class AgentSession {
         let dangerous = dangerGuard ? Self.dangerReason(tool: tool.name, args: parsed) : nil
         if tool.needsApproval && (!autoApprove || dangerous != nil) {
             update(.awaitingApproval, "")
-            let id = items[index].id
-            let ok = await withCheckedContinuation { approvals[id] = $0 }
+            let ok = await withCheckedContinuation { approvals[itemID] = $0 }
             guard ok else {
                 update(.denied, "Abgelehnt")
                 return "Der Nutzer hat diesen Aufruf abgelehnt."
@@ -277,6 +284,11 @@ final class AgentSession {
             update(.failed, error.localizedDescription)
             return "Fehler: \(error.localizedDescription)"
         }
+    }
+
+    /// Eintrag über seine ID ändern – wurde das Gespräch inzwischen zurückgesetzt, passiert nichts.
+    private func setKind(_ id: UUID, _ kind: Item.Kind) {
+        if let i = items.firstIndex(where: { $0.id == id }) { items[i].kind = kind }
     }
 
     /// Erkennt Aktionen, die auch im YOLO-Modus eine Freigabe brauchen. nil = unbedenklich.

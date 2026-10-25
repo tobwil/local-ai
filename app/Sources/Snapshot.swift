@@ -24,6 +24,7 @@ enum Snapshot {
             ("footer", AnyView(KisruptivFooter().padding(20).frame(width: 900))),
             ("icon", AnyView(Image(nsImage: NSApp.applicationIconImage ?? NSImage()).resizable().frame(width: 256, height: 256))),
             ("compare", AnyView(Chart_SWE().padding(20).frame(width: 760))),
+            ("talkbar", AnyView(TalkBar().padding(20).frame(width: 760))),
         ]
         for (name, view) in views {
             for (scheme, label) in [(ColorScheme.light, "hell"), (.dark, "dunkel")] {
@@ -43,7 +44,7 @@ enum Snapshot {
 
 private struct Chart_SWE: View {
     var body: some View {
-        let bench = BenchmarkData.all[0]
+        let bench = BenchmarkData.all[1]
         return VStack(alignment: .leading) {
             Text(bench.name).font(.headline)
             CompareChart(bench: bench)

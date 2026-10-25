@@ -41,6 +41,8 @@ final class AppSettings {
     var readAloud: Bool { didSet { UserDefaults.standard.set(readAloud, forKey: "readAloud") } }
     /// Kalender, Erinnerungen, Kontakte, Mail.
     var pimEnabled: Bool { didSet { UserDefaults.standard.set(pimEnabled, forKey: "pimEnabled") } }
+    /// Bildschirmfotos für den Agenten (look_at_screen) und im Gesprächsmodus.
+    var screenEnabled: Bool { didSet { UserDefaults.standard.set(screenEnabled, forKey: "screenEnabled") } }
 
     init() {
         let d = UserDefaults.standard
@@ -61,6 +63,7 @@ final class AppSettings {
         browserApp = d.string(forKey: "browserApp") ?? "Brave Browser"
         readAloud = d.bool(forKey: "readAloud")
         pimEnabled = d.bool(forKey: "pimEnabled")
+        screenEnabled = d.object(forKey: "screenEnabled") as? Bool ?? true
     }
 }
 

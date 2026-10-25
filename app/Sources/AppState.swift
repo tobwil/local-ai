@@ -16,6 +16,11 @@ final class AppState {
     let voice = VoiceController()
     let installer = EngineInstaller()
 
+    // MARK: Gesprächsmodus
+    enum TalkPhase: Equatable { case off, listening, thinking, speaking }
+    private(set) var talkPhase: TalkPhase = .off
+    var talkMode: Bool { talkPhase != .off }
+
     var selectedModelID: String {
         didSet { UserDefaults.standard.set(selectedModelID, forKey: "selectedModel") }
     }
@@ -35,10 +40,20 @@ final class AppState {
         server.memoryCeilingGiB = ((limitGiB - 0.05) * 10).rounded(.down) / 10
         BundledSkills.installIfNeeded()
         session.onFinish = { [weak self] text in
-            guard let self, self.settings.readAloud else { return }
-            self.voice.speak(text)
+            guard let self else { return }
+            if self.talkMode {
+                self.talkPhase = .speaking
+                self.voice.speak(text)
+            } else if self.settings.readAloud {
+                self.voice.speak(text)
+            }
         }
         voice.onTranscript = { [weak self] text in self?.session.input = text }
+        voice.onUtterance = { [weak self] text in self?.talkSend(text) }
+        voice.onSpeechFinished = { [weak self] in
+            guard let self, self.talkPhase == .speaking else { return }
+            self.talkListen()
+        }
         plugins.reload()
     }
 
@@ -77,6 +92,7 @@ final class AppState {
         if settings.browserEnabled { tools += BrowserTools.all() }
         if useBuiltinTools { tools += SystemTools.all() }
         if settings.pimEnabled { tools += PIMTools.all() }
+        if settings.screenEnabled { tools.append(ScreenCapture.lookTool { [weak self] in self?.visionModelID }) }
         if !plugins.skills.isEmpty { tools.append(skillTool) }
         if !plugins.agents.isEmpty { tools.append(subAgentTool) }
         if !settings.expertModel.isEmpty { tools.append(expertTool) }
@@ -186,6 +202,55 @@ final class AppState {
         return nil
     }
 
+    /// Vision-Modell für Bilder: das gewählte (falls es Bilder kann), sonst Router-Ziel oder erstes installiertes.
+    var visionModelID: String? {
+        if selectedModel?.vision == true || selectedIsCloud { return selectedModelID }
+        if let routed = settings.routes[ModelRouter.Topic.vision.rawValue], !routed.isEmpty { return routed }
+        return installedModels.first { $0.vision }?.id
+    }
+
+    func toggleTalkMode() {
+        if talkMode {
+            talkPhase = .off
+            voice.pauseInterval = nil
+            voice.stopListening()
+            voice.stopSpeaking()
+        } else {
+            talkListen()
+        }
+    }
+
+    private func talkListen() {
+        talkPhase = .listening
+        voice.pauseInterval = 1.4
+        session.input = ""
+        voice.startListening(currentText: "")
+    }
+
+    /// Für den Selbsttest: einen Gesprächszug ohne Mikrofon auslösen.
+    func simulateTalkTurn(_ text: String) {
+        talkPhase = .thinking
+        talkSend(text)
+    }
+
+    /// Fertige Äußerung: ggf. Bildschirm anhängen („schau auf meinen Bildschirm“), abschicken, auf Antwort warten.
+    private func talkSend(_ text: String) {
+        guard talkMode else { return }
+        talkPhase = .thinking
+        Task {
+            let lower = text.lowercased()
+            if settings.screenEnabled, ["bildschirm", "was siehst du", "schau mal", "screenshot"].contains(where: lower.contains),
+               let jpeg = try? await ScreenCapture.capture(.screen) {
+                session.attachments.append(jpeg)
+            }
+            session.input = text
+            send()
+            // Kein Text zurück (Fehler/Abbruch)? Dann weiter zuhören.
+            while session.isRunning { try? await Task.sleep(for: .milliseconds(200)) }
+            if talkPhase == .thinking { talkListen() }
+        }
+    }
+
     /// Empfohlener Wert: ~83 % des Arbeitsspeichers für die GPU (24 GB → 20 GB), Rest für macOS.
     var recommendedGPULimitMB: Int { Int(Double(hardware.memoryGiB) * 1024 * 0.83) }
 
@@ -214,6 +279,7 @@ final class AppState {
         if voice.isListening { voice.stopListening() }
         let model = routedModel()
         var context = agentContext
+        context.spoken = talkMode
         // MTP "Automatisch": nur bei Code-Aufgaben spekulieren (Header X-oMLX-MTP).
         if ModelSettingsStore.acceleration(for: model) == .auto {
             context.mtp = ModelRouter.classify(session.input, hasImages: false, isCommand: session.input.hasPrefix("/")) == .code

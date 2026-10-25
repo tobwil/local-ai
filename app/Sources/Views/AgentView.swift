@@ -201,6 +201,7 @@ private struct ToolCard: View {
 private struct Composer: View {
     @Environment(AppState.self) private var app
     @FocusState private var focused: Bool
+    @State private var captureError: String?
 
     var body: some View {
         @Bindable var session = app.session
@@ -234,6 +235,9 @@ private struct Composer: View {
                 Text(app.selectedModelName).font(.caption).foregroundStyle(.secondary)
             }
             .controlSize(.small)
+
+            if app.talkMode { TalkBar() }
+            if let captureError { Label(captureError, systemImage: "camera.metering.unknown").font(.caption).foregroundStyle(.orange) }
 
             if let e = app.voice.error {
                 Label(e, systemImage: "mic.slash").font(.caption).foregroundStyle(.orange)
@@ -311,6 +315,22 @@ private struct Composer: View {
                 }
                 .buttonStyle(.plain).foregroundStyle(app.settings.readAloud ? AnyShapeStyle(Theme.primary) : AnyShapeStyle(.secondary))
                 .help(app.voice.isSpeaking ? "Vorlesen stoppen" : "Antworten vorlesen an/aus")
+                Menu {
+                    ForEach(ScreenCapture.Mode.allCases) { mode in
+                        Button { capture(mode) } label: { Label(mode.label, systemImage: mode.icon) }
+                    }
+                } label: {
+                    Image(systemName: "camera.viewfinder").font(.system(size: 19))
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .foregroundStyle(.secondary)
+                .help("Bildschirmfoto anhängen")
+                Button { app.toggleTalkMode() } label: {
+                    Image(systemName: app.talkMode ? "waveform.circle.fill" : "waveform.circle").font(.system(size: 22))
+                        .symbolEffect(.variableColor.iterative, isActive: app.talkPhase == .speaking)
+                }
+                .buttonStyle(.plain).foregroundStyle(app.talkMode ? AnyShapeStyle(Theme.gold) : AnyShapeStyle(.secondary))
+                .help("Gesprächsmodus: sprechen, Pause → abschicken, Antwort hören, weiter sprechen")
                 Button { pickImages() } label: { Image(systemName: "photo.badge.plus").font(.system(size: 20)) }
                     .buttonStyle(.plain).foregroundStyle(.secondary).help("Bild anhängen (auch per Drag & Drop)")
                 if session.isRunning {
@@ -339,6 +359,16 @@ private struct Composer: View {
         guard input.hasPrefix("/"), !input.contains(" ") else { return [] }
         let q = input.dropFirst().lowercased()
         return Array(app.plugins.commands.filter { q.isEmpty || $0.name.lowercased().hasPrefix(q) }.prefix(8))
+    }
+
+    private func capture(_ mode: ScreenCapture.Mode) {
+        Task {
+            do {
+                if let jpeg = try await ScreenCapture.capture(mode) { app.session.attachments.append(jpeg) }
+            } catch {
+                captureError = error.localizedDescription
+            }
+        }
     }
 
     private func pickImages() {
@@ -495,5 +525,61 @@ enum ImageAttachment {
         NSImage(cgImage: cg, size: size).draw(in: NSRect(origin: .zero, size: size))
         NSGraphicsContext.restoreGraphicsState()
         return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.85])
+    }
+}
+
+
+/// Leiste des Gesprächsmodus: Zustand, Pegel, Live-Text, Unterbrechen und Beenden.
+struct TalkBar: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(color.opacity(0.18)).frame(width: 38, height: 38)
+                    .scaleEffect(app.talkPhase == .listening ? 1 + CGFloat(app.voice.level) * 0.6 : 1)
+                    .animation(.easeOut(duration: 0.12), value: app.voice.level)
+                Image(systemName: icon).foregroundStyle(color)
+                    .symbolEffect(.pulse, isActive: app.talkPhase == .thinking)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.callout.weight(.semibold))
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer()
+            if app.talkPhase == .speaking {
+                Button("Unterbrechen") { app.voice.stopSpeaking() }
+            }
+            Button(role: .cancel) { app.toggleTalkMode() } label: { Label("Beenden", systemImage: "xmark.circle.fill") }
+        }
+        .padding(12)
+        .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.gold.opacity(0.7), lineWidth: 1.5))
+    }
+
+    private var icon: String {
+        switch app.talkPhase {
+        case .listening: return "mic.fill"
+        case .thinking: return "brain"
+        case .speaking: return "speaker.wave.2.fill"
+        case .off: return "mic.slash"
+        }
+    }
+    private var color: Color { app.talkPhase == .listening ? .red : app.talkPhase == .speaking ? Theme.primary : Theme.gold }
+    private var title: String {
+        switch app.talkPhase {
+        case .listening: return "Ich höre zu …"
+        case .thinking: return "Ich denke nach …"
+        case .speaking: return "Ich spreche – „Unterbrechen“, um direkt weiterzureden"
+        case .off: return ""
+        }
+    }
+    private var subtitle: String {
+        switch app.talkPhase {
+        case .listening: return app.voice.liveText.isEmpty ? "Sprich einfach – nach einer kurzen Pause schicke ich ab. „Schau auf meinen Bildschirm“ hängt ein Bildschirmfoto an." : app.voice.liveText
+        case .thinking: return app.selectedModelName
+        case .speaking: return "Danach höre ich automatisch wieder zu."
+        case .off: return ""
+        }
     }
 }

@@ -74,9 +74,9 @@ die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
 | Bereich | Was er kann |
 |---|---|
 | **Übersicht** | erkennt Chip, RAM, GPU-Limit, Bandbreite und SSD, empfiehlt das passende Modell, zeigt erwartete tok/s; richtet die Engine per Klick ein |
-| **Agent** | Chat mit Streaming und Live-tok/s, Diktat und Vorlesen, Bilder anhängen (Vision), Slash-Befehle, Verlauf; Werkzeuge mit Freigabe oder YOLO |
+| **Agent** | Chat mit Streaming und Live-tok/s, **Gesprächsmodus**, Diktat und Vorlesen, Bilder und Bildschirmfotos (Vision), Slash-Befehle, Verlauf; Werkzeuge mit Freigabe oder YOLO |
 | **Modelle** | Katalog (Ornith, Qwen 3.6 Vision, Gemma 4, LFM2.5, Mellum), lokal gefundene Modelle, Cloud-Modelle; **Hugging-Face-Browser** mit Bewertung „läuft gut / langsam / knapp / zu groß“, tok/s-Schätzung und Prüfung, ob die installierte Engine die Architektur kennt |
-| **Vergleich** | Benchmarks der lokalen Modelle gegen Claude Opus 5/5.5, GPT-5.5, Gemini (Herstellerangaben, Stand 25.10.2026, mit Quellen) |
+| **Vergleich** | lokale Modelle gegen GPT-6 Astra, GPT-6.1 Sol, GPT-5.5/5.6, Claude Opus 5/5.5, Fable 5.1, Mythos 5, Gemini 3.1 – SWE-bench Verified/Pro, Terminal-Bench, GPQA, HLE, ARC-AGI-2 (Stand 25.10.2026, mit Quellen) |
 | **Skills & Plugins** | Claude-Code-Format: Skills (`SKILL.md`), Plugins mit Befehlen, Sub-Agenten und MCP; Katalog aus Marketplaces (offizieller Anthropic-Katalog, eigene per Git), Installation per Klick |
 | **Werkzeuge & MCP** | MCP-Client für stdio- und HTTP-Server (Format wie Claude Desktop, Import, Vorlagen, `${VAR}`-Ersetzung) |
 | **Verbinden** | Claude Code / Claude Desktop / OpenAI-kompatible Clients; die App selbst als MCP-Server (`--mcp-server`) |
@@ -89,7 +89,7 @@ die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
 | Dateien & Shell | `list_directory`, `read_file` (auch PDF), `find_files`, `search_files`, `write_file`, `edit_file`, `run_shell` |
 | Web | `web_search`, `fetch_url`, `http_request` (GET/POST/PUT/PATCH/DELETE) |
 | Dein Browser | `browser_tabs`, `browser_open`, `browser_read`, `browser_click`, `browser_type`, `browser_scroll`, `browser_back` – Brave, Chrome, Edge, Arc, Safari über JavaScript for Automation |
-| Mac | `clipboard_read`, `clipboard_write`, `notify` |
+| Mac | `clipboard_read`, `clipboard_write`, `notify`, `look_at_screen` (Bildschirmfoto → Vision-Modell) |
 | Kalender & Co. | `calendar_events`, `calendar_create`, `reminders_list`, `reminders_create`, `contacts_search`, `mail_recent`, `mail_draft` (nur Entwürfe, nie selbst senden) |
 | Gedächtnis | `remember`, `forget` – gilt in allen Gesprächen (`~/.strata-lite/memory.md`) |
 | Agenten | `use_skill`, `run_agent` (Sub-Agenten aus Plugins), `ask_expert` (Cloud-Briefing) |
@@ -105,6 +105,10 @@ Mitgelieferte Skills: `web-recherche`, `code-review`, `dokumente-zusammenfassen`
 
 **Cloud ist optional:** Ohne API-Schlüssel bleibt alles auf dem Mac. Claude läuft über die Messages-API (`anthropic-version 2026-10-21`,
 adaptives Thinking, Thinking-Blöcke werden unverändert zurückgegeben, serverseitige Fallbacks bei Ablehnungen eingeschaltet).
+
+**Gesprächsmodus** (Wellen-Symbol im Chat): sprechen – nach ~1,4 s Pause wird abgeschickt – die Antwort wird vorgelesen –
+danach hört KI/lokal wieder zu. „Schau auf meinen Bildschirm“ hängt automatisch ein Bildschirmfoto an. Antworten sind im
+Gesprächsmodus kurz und vorlesbar. **Bildschirmfotos** (ganzer Bildschirm, Bereich, Fenster) gehen per Kamera-Symbol an das Vision-Modell.
 
 **Sprache:** Diktat über die Spracherkennung von macOS (auf dem Gerät, wenn verfügbar), Vorlesen mit der besten
 installierten Systemstimme – ohne zusätzliches Modell im knappen Speicher.

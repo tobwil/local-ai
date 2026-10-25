@@ -191,6 +191,56 @@ enum SelfTest {
             return "\(risky.count) gefährliche erkannt, \(safe.count) harmlose durchgelassen, Pfade geprüft"
         }) { failed += 1 }
 
+        if !(await check("Gesprächsmodus: Pausenerkennung") {
+            let (sent, early) = await MainActor.run { () -> (VoiceController, Box) in
+                let v = VoiceController()
+                let box = Box()
+                v.pauseInterval = 0.4
+                v.onUtterance = { box.values.append($0) }
+                return (v, box)
+            }
+            await MainActor.run { sent.handlePartial("Wie wird") }
+            try await Task.sleep(for: .milliseconds(250))
+            await MainActor.run { sent.handlePartial("Wie wird das Wetter morgen") }   // setzt die Uhr zurück
+            try await Task.sleep(for: .milliseconds(250))
+            let before = await MainActor.run { early.values }
+            try await Task.sleep(for: .milliseconds(400))
+            let after = await MainActor.run { early.values }
+            guard before.isEmpty, after == ["Wie wird das Wetter morgen"] else {
+                throw ToolError.invalid("vor Pause \(before), nach Pause \(after)")
+            }
+            let spoken = VoiceController.plain("**Morgen** wird es [sonnig](https://x.de).\n```\ncode\n```")
+            return "Abschicken erst nach Pause, Uhr wird bei neuem Text zurückgesetzt · Vorlesetext: \(spoken)"
+        }) { failed += 1 }
+
+        if !model.isEmpty, !(await check("Gesprächsmodus: ein Zug mit dem Modell") {
+            let app = await MainActor.run { () -> AppState in
+                let a = AppState.shared
+                a.voice.muted = true
+                a.selectedModelID = model
+                a.session.reset()
+                a.simulateTalkTurn("Sag in einem kurzen Satz, wie spät es ungefähr am Morgen ist, wenn die Sonne aufgeht.")
+                return a
+            }
+            var phases: [AppState.TalkPhase] = []
+            for _ in 0..<240 {
+                let p = await MainActor.run { app.talkPhase }
+                if phases.last != p { phases.append(p) }
+                if p == .speaking { break }
+                try await Task.sleep(for: .milliseconds(250))
+            }
+            let answer = await MainActor.run { () -> String in
+                for item in app.session.items.reversed() { if case let .assistant(t, _, _) = item.kind, !t.isEmpty { return t } }
+                return ""
+            }
+            await MainActor.run {
+                app.toggleTalkMode()   // erst beenden, damit „fertig gesprochen“ nicht wieder das Mikrofon startet
+                app.session.reset()
+            }
+            guard phases.contains(.speaking), !answer.isEmpty else { throw ToolError.invalid("Phasen \(phases), Antwort '\(answer)'") }
+            return "Phasen \(phases.map { "\($0)" }.joined(separator: " → ")) · Antwort: \(answer.prefix(120))"
+        }) { failed += 1 }
+
         if !(await check("Modell-Router") {
             let cases: [(String, Bool, ModelRouter.Topic)] = [
                 ("Wie hoch ist der Mount Everest?", false, .general),
@@ -268,3 +318,6 @@ enum SelfTest {
         return failed
     }
 }
+
+
+@MainActor private final class Box { var values: [String] = [] }

@@ -11,6 +11,18 @@ final class VoiceController: NSObject {
     private(set) var error: String?
     /// Wird mit dem erkannten Text aufgerufen (laufend aktualisiert).
     var onTranscript: ((String) -> Void)?
+    /// Gesprächsmodus: nach dieser Sprechpause gilt eine Äußerung als fertig (nil = Diktat ohne Automatik).
+    var pauseInterval: TimeInterval?
+    /// Fertige Äußerung im Gesprächsmodus.
+    var onUtterance: ((String) -> Void)?
+    /// Vorlesen beendet (natürlich oder abgebrochen).
+    var onSpeechFinished: (() -> Void)?
+    /// Mikrofonpegel 0…1 für die Anzeige.
+    private(set) var level: Float = 0
+    private(set) var liveText = ""
+    private var pauseTimer: Task<Void, Never>?
+    /// Für Tests: lautlos vorlesen.
+    var muted = false
 
     private let engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -45,8 +57,14 @@ final class VoiceController: NSObject {
     }
 
     func stopListening() {
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
+        pauseTimer?.cancel()
+        pauseTimer = nil
+        level = 0
+        // Den Audioeingang nur anfassen, wenn er läuft (sonst fragt macOS unnötig nach dem Mikrofon).
+        if engine.isRunning {
+            engine.stop()
+            engine.inputNode.removeTap(onBus: 0)
+        }
         request?.endAudio()
         task?.finish()
         request = nil
@@ -67,20 +85,56 @@ final class VoiceController: NSObject {
 
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak req] buffer, _ in req?.append(buffer) }
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self, weak req] buffer, _ in
+            req?.append(buffer)
+            // Pegel für die Anzeige (RMS des ersten Kanals).
+            guard let ch = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
+            var sum: Float = 0
+            for i in 0..<Int(buffer.frameLength) { sum += ch[i] * ch[i] }
+            let rms = min(1, sqrt(sum / Float(buffer.frameLength)) * 8)
+            Task { @MainActor in self?.level = rms }
+        }
         engine.prepare()
         try engine.start()
         isListening = true
+        liveText = ""
 
         task = recognizer.recognitionTask(with: req) { [weak self] result, err in
             let text = result?.bestTranscription.formattedString
             let final = result?.isFinal ?? false
             Task { @MainActor in
                 guard let self else { return }
-                if let text { self.onTranscript?(self.prefix + text) }
-                if err != nil || final { if self.isListening { self.stopListening() } }
+                if let text { self.handlePartial(self.prefix + text) }
+                if err != nil || final {
+                    if self.isListening { self.stopListening() }
+                    // Im Gesprächsmodus eine erkannte Äußerung trotzdem abschicken.
+                    if final, self.pauseInterval != nil, !self.liveText.isEmpty { self.finishUtterance() }
+                }
             }
         }
+    }
+
+    /// Neuer Zwischenstand der Erkennung: anzeigen und im Gesprächsmodus die Pausen-Uhr neu starten.
+    func handlePartial(_ text: String) {
+        liveText = text
+        onTranscript?(text)
+        guard let pause = pauseInterval else { return }
+        pauseTimer?.cancel()
+        pauseTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(pause))
+            guard !Task.isCancelled else { return }
+            self?.finishUtterance()
+        }
+    }
+
+    private func finishUtterance() {
+        pauseTimer?.cancel()
+        pauseTimer = nil
+        let text = liveText.trimmingCharacters(in: .whitespacesAndNewlines)
+        liveText = ""
+        if isListening { stopListening() }
+        guard !text.isEmpty else { return }
+        onUtterance?(text)
     }
 
     private static func authorize() async -> Bool {
@@ -100,6 +154,7 @@ final class VoiceController: NSObject {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = Self.bestVoice()
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
+        if muted { utterance.volume = 0 }
         synth.speak(utterance)
         isSpeaking = true
     }
@@ -107,6 +162,7 @@ final class VoiceController: NSObject {
     func stopSpeaking() {
         synth.stopSpeaking(at: .immediate)
         isSpeaking = false
+        onSpeechFinished?()
     }
 
     /// Beste installierte Stimme der Sprache (Premium > Erweitert > Standard).
@@ -117,7 +173,7 @@ final class VoiceController: NSObject {
     }
 
     /// Markdown für die Sprachausgabe glätten; Code-Blöcke werden nicht vorgelesen.
-    static func plain(_ md: String) -> String {
+    nonisolated static func plain(_ md: String) -> String {
         var s = md.replacingOccurrences(of: "```[\\s\\S]*?```", with: " (Code-Block) ", options: .regularExpression)
         s = s.replacingOccurrences(of: "\\[([^\\]]+)\\]\\([^)]+\\)", with: "$1", options: .regularExpression)
         s = s.replacingOccurrences(of: "https?://\\S+", with: "", options: .regularExpression)
@@ -128,6 +184,9 @@ final class VoiceController: NSObject {
 
 extension VoiceController: AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.isSpeaking = false }
+        Task { @MainActor in
+            self.isSpeaking = false
+            self.onSpeechFinished?()
+        }
     }
 }

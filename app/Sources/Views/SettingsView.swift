@@ -49,6 +49,14 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Bildschirm & Gesprächsmodus") {
+                Toggle("Agent darf auf den Bildschirm schauen (look_at_screen, „schau auf meinen Bildschirm“)", isOn: $settings.screenEnabled)
+                Text("Bildschirmfotos gehen an das Vision-Modell (\(app.visionModelID.map(CloudModels.displayName) ?? "keins installiert")) – lokal, außer du hast ein Cloud-Modell gewählt. Jede Aufnahme durch den Agenten braucht deine Freigabe, außer im YOLO-Modus. macOS fragt einmal nach der Erlaubnis für Bildschirmaufnahmen.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("Gesprächsmodus (Wellen-Symbol im Chat): sprechen, nach ~1,4 s Pause wird abgeschickt, die Antwort wird vorgelesen, danach hört KI/lokal wieder zu.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             Section("Kalender, Erinnerungen, Kontakte & Mail") {
                 Toggle("Agent darf Termine, Erinnerungen, Kontakte und Mail nutzen", isOn: $settings.pimEnabled)
                 Text("Lesen läuft direkt, Termine/Erinnerungen anlegen und Mail-Entwürfe nur nach Freigabe. Mails werden nie selbst verschickt – der Agent legt einen Entwurf an, du sendest. macOS fragt beim ersten Zugriff nach.")
