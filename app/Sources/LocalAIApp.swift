@@ -5,7 +5,7 @@ import SwiftUI
 enum Main {
     static func main() {
         if CommandLine.arguments.contains("--selftest") {
-            exit(SelfTest.run())
+            SelfTest.run()
         }
         if CommandLine.arguments.contains("--mcp-server") {
             MCPServerMode.run()
@@ -51,7 +51,7 @@ struct MenuBarContent: View {
 
     var body: some View {
         Text(app.server.state.label)
-        if let m = app.selectedModel { Text(m.name) }
+        Text(app.selectedModelName)
         Divider()
         if app.server.state == .running || app.server.state == .starting {
             Button("Server stoppen") { app.server.stop() }

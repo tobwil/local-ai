@@ -11,7 +11,11 @@ targets:
   LocalAI:
     type: application
     platform: macOS
-    sources: [Sources]
+    sources:
+      - path: Sources
+      - path: Resources/Skills
+        type: folder
+        buildPhase: resources
     info:
       path: Resources/Info.plist
       properties:
@@ -21,6 +25,7 @@ targets:
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: "MIT"
+        NSAppleEventsUsageDescription: "Local AI steuert auf deinen Wunsch deinen Browser (Tabs lesen, Seiten öffnen, klicken, tippen)."
     settings:
       base:
         PRODUCT_NAME: Local AI

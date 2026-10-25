@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AgentView: View {
     @Environment(AppState.self) private var app
@@ -26,6 +27,9 @@ struct AgentView: View {
         }
         .toolbar {
             ToolbarItem {
+                HistoryMenu()
+            }
+            ToolbarItem {
                 Button { app.session.reset() } label: { Label("Neues Gespräch", systemImage: "square.and.pencil") }
             }
         }
@@ -42,7 +46,7 @@ private struct EmptyAgent: View {
     private let ideas = [
         ("folder", "Was liegt in meinem Arbeitsordner? Fasse die wichtigsten Dateien zusammen."),
         ("chevron.left.forwardslash.chevron.right", "Schreibe ein Python-Skript, das alle Fotos in einem Ordner nach Datum sortiert, und speichere es als sort_photos.py."),
-        ("globe", "Lies https://news.ycombinator.com und nenne mir die drei spannendsten Themen."),
+        ("globe", "Recherchiere die wichtigsten KI-Neuigkeiten dieser Woche und fasse sie mit Quellen zusammen."),
         ("terminal", "Wie viel Speicherplatz ist auf meinem Mac frei? Prüfe es mit einem Shell-Befehl."),
     ]
 
@@ -52,7 +56,7 @@ private struct EmptyAgent: View {
                 Image(systemName: "sparkles").font(.system(size: 30)).foregroundStyle(Theme.brand)
                 VStack(alignment: .leading) {
                     Text("Dein lokaler Agent").font(.title.bold())
-                    Text("\(app.agentTools.count) Werkzeuge bereit · alles bleibt auf diesem Mac").foregroundStyle(.secondary)
+                    Text("\(app.agentTools.count) Werkzeuge · \(app.plugins.skills.count) Skills · \(app.plugins.commands.count) Befehle – das Modell läuft auf diesem Mac").foregroundStyle(.secondary)
                 }
             }
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
@@ -82,14 +86,28 @@ private struct ItemView: View {
 
     var body: some View {
         switch item.kind {
-        case let .user(text):
-            HStack {
+        case let .user(text, images):
+            HStack(alignment: .top) {
                 Spacer(minLength: 80)
-                Text(text)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .foregroundStyle(.white)
-                    .background(Theme.brand, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                VStack(alignment: .trailing, spacing: 6) {
+                    if !images.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(Array(images.enumerated()), id: \.offset) { _, data in
+                                if let img = NSImage(data: data) {
+                                    Image(nsImage: img).resizable().scaledToFill()
+                                        .frame(width: 120, height: 90).clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+                    }
+                    if !text.isEmpty {
+                        Text(text)
+                            .textSelection(.enabled)
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            .foregroundStyle(.white)
+                            .background(Theme.brand, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
             }
         case let .assistant(text, thinking, stats):
             VStack(alignment: .leading, spacing: 8) {
@@ -110,6 +128,7 @@ private struct ItemView: View {
                         Label("\(stats.tokPerSec.oneDecimal) tok/s", systemImage: "bolt.fill")
                         Text("\(stats.tokens) Tokens")
                         Text("erstes Token nach \(String(format: "%.1f", stats.ttft)) s")
+                        if !stats.model.isEmpty { Text(CloudModels.displayName(stats.model)) }
                     }
                     .font(.caption2).foregroundStyle(.tertiary)
                 }
@@ -197,8 +216,12 @@ private struct Composer: View {
                 }
                 .help("Arbeitsordner: \(session.workspace.path)")
                 if session.agentMode {
-                    Toggle("Ohne Nachfrage", isOn: $session.autoApprove).toggleStyle(.checkbox).font(.caption)
-                        .help("Schreiben, Shell und MCP-Aufrufe ohne Freigabe ausführen")
+                    Toggle(isOn: $session.autoApprove) { Label("YOLO", systemImage: session.autoApprove ? "flame.fill" : "flame") }
+                        .toggleStyle(.button)
+                        .tint(session.autoApprove ? .orange : nil)
+                        .help(session.autoApprove
+                              ? "YOLO an: Werkzeuge laufen ohne Nachfrage\(session.dangerGuard ? " (außer zerstörerische Befehle)" : " – auch zerstörerische!")"
+                              : "YOLO-Modus: Agent fragt nicht mehr vor Schreiben, Shell, Browser-Aktionen und MCP-Aufrufen")
                 }
                 Spacer()
                 if session.isRunning && session.liveTokPerSec > 0 {
@@ -206,12 +229,62 @@ private struct Composer: View {
                         .font(.caption.monospacedDigit()).foregroundStyle(Theme.violet)
                         .contentTransition(.numericText())
                 }
-                Text(app.selectedModel?.name ?? app.selectedModelID).font(.caption).foregroundStyle(.secondary)
+                if app.selectedIsCloud {
+                    Chip(text: "Cloud – Daten verlassen den Mac", systemImage: "cloud", tint: .orange)
+                }
+                Text(app.selectedModelName).font(.caption).foregroundStyle(.secondary)
             }
             .controlSize(.small)
 
+            if !session.attachments.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(Array(session.attachments.enumerated()), id: \.offset) { i, data in
+                        if let img = NSImage(data: data) {
+                            Image(nsImage: img).resizable().scaledToFill().frame(width: 64, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(alignment: .topTrailing) {
+                                    Button { session.attachments.remove(at: i) } label: {
+                                        Image(systemName: "xmark.circle.fill").foregroundStyle(.white, .black.opacity(0.6))
+                                    }
+                                    .buttonStyle(.plain).padding(2)
+                                }
+                        }
+                    }
+                    if app.selectedModel?.vision != true && !app.selectedIsCloud {
+                        Label("Das gewählte Modell versteht keine Bilder – wähle ein Vision-Modell unter Modelle.", systemImage: "eye.slash")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                    Spacer()
+                }
+            }
+
+            if !suggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(suggestions) { c in
+                        Button {
+                            session.input = "/\(c.name) "
+                            focused = true
+                        } label: {
+                            HStack {
+                                Text("/\(c.name)").font(.callout.monospaced().weight(.semibold))
+                                Text(c.argumentHint).font(.caption).foregroundStyle(.tertiary)
+                                Text(c.description).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                Spacer()
+                                Text(c.source).font(.caption2).foregroundStyle(.tertiary)
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(6)
+                .background(.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator))
+            }
+
             HStack(alignment: .bottom, spacing: 10) {
-                TextField(app.server.state.isUp ? "Frag etwas oder gib dem Agenten eine Aufgabe …" : "Server starten, um loszulegen",
+                TextField(app.canSend ? "Frag etwas oder gib dem Agenten eine Aufgabe …" : "Server starten, um loszulegen",
                           text: $session.input, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
@@ -221,19 +294,43 @@ private struct Composer: View {
                     .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(focused ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.separator), lineWidth: focused ? 1.5 : 1))
+                Button { pickImages() } label: { Image(systemName: "photo.badge.plus").font(.system(size: 20)) }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Bild anhängen (auch per Drag & Drop)")
                 if session.isRunning {
                     Button { session.stop() } label: { Image(systemName: "stop.circle.fill").font(.system(size: 30)) }
                         .buttonStyle(.plain).foregroundStyle(.red)
                 } else {
                     Button { app.send() } label: { Image(systemName: "arrow.up.circle.fill").font(.system(size: 30)) }
                         .buttonStyle(.plain).foregroundStyle(Theme.brand)
-                        .disabled(!app.server.state.isUp || session.input.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(!app.canSend
+                                  || (session.input.trimmingCharacters(in: .whitespaces).isEmpty && session.attachments.isEmpty))
                 }
             }
         }
         .padding(16)
         .background(.bar)
         .onAppear { focused = true }
+        .dropDestination(for: URL.self) { urls, _ in
+            let images = urls.compactMap { ImageAttachment.jpeg(from: $0) }
+            app.session.attachments += images
+            return !images.isEmpty
+        }
+    }
+
+    private var suggestions: [SlashCommand] {
+        let input = app.session.input
+        guard input.hasPrefix("/"), !input.contains(" ") else { return [] }
+        let q = input.dropFirst().lowercased()
+        return Array(app.plugins.commands.filter { q.isEmpty || $0.name.lowercased().hasPrefix(q) }.prefix(8))
+    }
+
+    private func pickImages() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        if panel.runModal() == .OK {
+            app.session.attachments += panel.urls.compactMap { ImageAttachment.jpeg(from: $0) }
+        }
     }
 
     private func pickWorkspace() {
@@ -326,5 +423,60 @@ struct CodeBlock: View {
         .background(.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator.opacity(0.6)))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+
+private struct HistoryMenu: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let _ = app.session.historyVersion
+        Menu {
+            let chats = ChatStore.list().prefix(25)
+            if chats.isEmpty { Text("Noch keine Gespräche") }
+            ForEach(chats) { chat in
+                Button {
+                    app.session.load(id: chat.id)
+                } label: {
+                    Text("\(chat.title) – \(chat.date.formatted(date: .abbreviated, time: .shortened))")
+                }
+            }
+            if !chats.isEmpty {
+                Divider()
+                Button("Aktuelles Gespräch löschen", role: .destructive) {
+                    ChatStore.delete(id: app.session.chatID)
+                    app.session.reset()
+                }
+            }
+        } label: {
+            Label("Verlauf", systemImage: "clock.arrow.circlepath")
+        }
+    }
+}
+
+
+enum ImageAttachment {
+    /// Bild laden, auf höchstens 1536 px verkleinern und als JPEG kodieren (spart Tokens).
+    static func jpeg(from url: URL, maxSide: CGFloat = 1536) -> Data? {
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        return jpeg(image, maxSide: maxSide)
+    }
+
+    static func jpeg(_ image: NSImage, maxSide: CGFloat = 1536) -> Data? {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let w = CGFloat(cg.width), h = CGFloat(cg.height)
+        let scale = min(1, maxSide / max(w, h))
+        let size = NSSize(width: (w * scale).rounded(), height: (h * scale).rounded())
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        NSImage(cgImage: cg, size: size).draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.85])
     }
 }

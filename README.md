@@ -65,27 +65,52 @@ tools/serve.sh
 
 ## Mac-App „Local AI“ (`app/`)
 
-SwiftUI-App für macOS 15+, die oMLX im Hintergrund steuert:
+SwiftUI-App für macOS 15+, die oMLX im Hintergrund steuert.
 
-- **Übersicht:** erkennt Chip, RAM, GPU-Limit, Bandbreite und SSD, empfiehlt das passende Modell, zeigt erwartete tok/s.
-- **Modelle:** laden direkt von Hugging Face (mit Fortschritt, fortsetzbar), auswählen, MTP ein/aus, in den Papierkorb.
-- **Agent:** Chat mit Streaming und Live-tok/s; das Modell kann Werkzeuge aufrufen (Ordner auflisten, Dateien lesen/schreiben,
-  Shell, Web abrufen). Schreiben, Shell und MCP-Aufrufe brauchen eine Freigabe im Chat.
-- **Werkzeuge & MCP:** MCP-Client für beliebige stdio-Server (Format wie Claude Desktop, Import aus dessen Konfiguration, Vorlagen).
-- **MCP-Server:** `"Local AI.app/Contents/MacOS/Local AI" --mcp-server` stellt `local_chat` und `local_models` bereit,
-  z. B. `claude mcp add local-ai -- "<Pfad>/Local AI" --mcp-server`.
-- **Verbinden:** fertige Befehle für Claude Code (Anthropic-API von oMLX), OpenAI-kompatible Clients und Claude Desktop.
-- **Menüleiste:** Status, Server starten/stoppen.
+| Bereich | Was er kann |
+|---|---|
+| **Übersicht** | erkennt Chip, RAM, GPU-Limit, Bandbreite und SSD, empfiehlt das passende Modell, zeigt erwartete tok/s |
+| **Agent** | Chat mit Streaming und Live-tok/s, Bilder anhängen (Vision), Slash-Befehle, Verlauf; Werkzeuge mit Freigabe für Schreiben/Shell/MCP/Cloud |
+| **Modelle** | Katalog (Ornith, Qwen 3.6 Vision, Gemma 4, LFM2.5, Mellum), lokal gefundene Modelle, Cloud-Modelle; **Hugging-Face-Browser** mit Bewertung „läuft gut / langsam / knapp / zu groß“, tok/s-Schätzung und Prüfung, ob die installierte Engine die Architektur kennt |
+| **Vergleich** | Benchmarks der lokalen Modelle gegen Claude Opus 5/5.5, GPT-5.5, Gemini (Herstellerangaben, Stand 25.10.2026, mit Quellen) |
+| **Skills & Plugins** | Claude-Code-Format: Skills (`SKILL.md`), Plugins mit Befehlen, Sub-Agenten und MCP; Katalog aus Marketplaces (offizieller Anthropic-Katalog, eigene per Git), Installation per Klick |
+| **Werkzeuge & MCP** | MCP-Client für stdio- und HTTP-Server (Format wie Claude Desktop, Import, Vorlagen, `${VAR}`-Ersetzung) |
+| **Verbinden** | Claude Code / Claude Desktop / OpenAI-kompatible Clients; die App selbst als MCP-Server (`--mcp-server`) |
+| **Einstellungen** | YOLO-Modus + Notbremse, Browser-Steuerung, Websuche (DuckDuckGo, SearXNG, Brave), Modell-Router nach Thema, Cloud-Anbieter (Anthropic, OpenAI-kompatibel), Experte für `ask_expert`, eigene Anweisungen |
+
+**Werkzeuge des Agenten:**
+
+| Gruppe | Werkzeuge |
+|---|---|
+| Dateien & Shell | `list_directory`, `read_file` (auch PDF), `find_files`, `search_files`, `write_file`, `edit_file`, `run_shell` |
+| Web | `web_search`, `fetch_url`, `http_request` (GET/POST/PUT/PATCH/DELETE) |
+| Dein Browser | `browser_tabs`, `browser_open`, `browser_read`, `browser_click`, `browser_type`, `browser_scroll`, `browser_back` – Brave, Chrome, Edge, Arc, Safari über JavaScript for Automation |
+| Mac | `clipboard_read`, `clipboard_write`, `notify` |
+| Gedächtnis | `remember`, `forget` – gilt in allen Gesprächen (`~/.strata-lite/memory.md`) |
+| Agenten | `use_skill`, `run_agent` (Sub-Agenten aus Plugins), `ask_expert` (Cloud-Briefing) |
+| MCP | alle Werkzeuge verbundener MCP-Server, Vorlagen u. a. Playwright und Chrome DevTools |
+
+**Freigaben & YOLO:** Schreiben, Shell, Browser-Aktionen, HTTP, MCP und Cloud brauchen eine Freigabe im Chat. Der **YOLO-Modus** (🔥 im Chat)
+führt alles ohne Nachfrage aus. Die abschaltbare **Notbremse** fragt trotzdem bei `sudo`, `rm -rf`, `git push --force`, `git reset --hard`,
+`curl … | sh`, Systembefehlen und beim Schreiben außerhalb des Benutzerordners.
+
+**Browser einrichten:** im Browser „JavaScript von Apple Events erlauben“ einschalten (Chrome/Brave/Edge: Ansicht → Entwickler;
+Safari: Entwickler-Menü), in Local AI unter Einstellungen → Browser-Steuerung einschalten; macOS fragt beim ersten Zugriff nach der Automation-Erlaubnis.
+Mitgelieferte Skills: `web-recherche`, `code-review`, `dokumente-zusammenfassen`, `mac-helfer`, `skill-ersteller`.
+
+**Cloud ist optional:** Ohne API-Schlüssel bleibt alles auf dem Mac. Claude läuft über die Messages-API (`anthropic-version 2026-10-21`,
+adaptives Thinking, Thinking-Blöcke werden unverändert zurückgegeben, serverseitige Fallbacks bei Ablehnungen eingeschaltet).
 
 ```bash
 app/Scripts/build.sh --run          # braucht Xcode und xcodegen (brew install xcodegen)
-"app/build/Local AI.app/Contents/MacOS/Local AI" --selftest   # Engine, Tool-Calls, Werkzeuge, MCP, Download
+"app/build/Local AI.app/Contents/MacOS/Local AI" --selftest   # ~19 Prüfungen, LOCALAI_TEST_VISION=1 zusätzlich Vision
 ```
 
-Die App erwartet oMLX unter `~/.strata-lite/omlx-venv` (siehe Einrichtung oben) und legt Modelle unter `~/.strata-lite/models` ab.
+Die App erwartet oMLX unter `~/.strata-lite/omlx-venv` (siehe Einrichtung oben) und legt Modelle, Skills, Plugins und Gespräche unter `~/.strata-lite/` ab.
 
 ## Nächste Schritte
 
 1. MTP pro Anfrage statt pro Modell (Patch für oMLX): 43 tok/s im Chat **und** ~78 tok/s bei Code ohne Neustart.
-2. oMLX in die App einbetten (wie dessen eigene App über venvstacks), damit keine Einrichtung im Terminal nötig ist.
-3. Langer Kontext (32k–64k) mit angehobenem GPU-Limit und KV-Quantisierung; Dauerlast-Test.
+2. oMLX in die App einbetten (wie dessen eigene App über venvstacks), signieren, als DMG verteilen.
+3. Sprache: Diktat und Vorlesen über mlx-audio (in oMLX schon enthalten).
+4. Langer Kontext (32k–64k) mit angehobenem GPU-Limit und KV-Quantisierung; Dauerlast-Test.

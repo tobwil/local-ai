@@ -22,6 +22,8 @@
 	<string>1</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Local AI steuert auf deinen Wunsch deinen Browser (Tabs lesen, Seiten öffnen, klicken, tippen).</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT</string>
 </dict>

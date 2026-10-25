@@ -13,22 +13,43 @@ enum LLMClient {
         case reasoning(String)
         case toolCalls([ToolCall])
         case usage(prompt: Int, completion: Int)
+        /// Original-Inhaltsblöcke der Antwort (nur Anthropic), um sie unverändert zurückzuschicken.
+        case raw([[String: Any]])
     }
 
     /// Streamt eine Antwort. `messages` und `tools` sind bereits im OpenAI-JSON-Format.
-    static func stream(model: String, messages: [[String: Any]], tools: [[String: Any]],
+    /// Modell-IDs mit "anthropic:" bzw. "openai:" gehen an den jeweiligen Cloud-Anbieter.
+    static func stream(model modelID: String, messages: [[String: Any]], tools: [[String: Any]],
                        thinking: Bool, maxTokens: Int = 4096) -> AsyncThrowingStream<Event, Error> {
-        AsyncThrowingStream { continuation in
+        let (endpoint, model) = Endpoint.resolve(modelID)
+        if case let .anthropic(key, base) = endpoint {
+            return AnthropicClient.stream(model: model, key: key, base: base, messages: messages, tools: tools,
+                                          thinking: thinking, maxTokens: maxTokens)
+        }
+        // Private Felder (z. B. _anthropic_content) nicht an OpenAI-kompatible Server schicken.
+        let messages = messages.map { $0.filter { !$0.key.hasPrefix("_") } }
+        return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     var body: [String: Any] = [
-                        "model": model, "stream": true, "max_tokens": maxTokens,
+                        "model": model, "stream": true,
                         "messages": messages,
                         "stream_options": ["include_usage": true],
-                        "chat_template_kwargs": ["enable_thinking": thinking],
                     ]
+                    var base = Paths.openAIBase
+                    var req = URLRequest(url: base)
+                    if case let .openai(key, b) = endpoint {
+                        base = b
+                        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                        // OpenAI selbst erwartet max_completion_tokens, andere kompatible Dienste meist max_tokens.
+                        body[b.host == "api.openai.com" ? "max_completion_tokens" : "max_tokens"] = maxTokens
+                        if thinking { body["reasoning_effort"] = "high" }
+                    } else {
+                        body["max_tokens"] = maxTokens
+                        body["chat_template_kwargs"] = ["enable_thinking": thinking]
+                    }
                     if !tools.isEmpty { body["tools"] = tools }
-                    var req = URLRequest(url: Paths.openAIBase.appendingPathComponent("chat/completions"))
+                    req.url = base.appendingPathComponent("chat/completions")
                     req.httpMethod = "POST"
                     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     req.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -91,6 +112,16 @@ enum LLMClient {
     }
 
     /// Eine Antwort ohne Streaming (für den MCP-Server-Modus).
+    /// Komplette Antwort über den Stream gesammelt (für Experten-Anfragen an beliebige Anbieter).
+    static func collect(model: String, system: String, prompt: String, maxTokens: Int = 8000) async throws -> String {
+        var text = ""
+        for try await ev in stream(model: model, messages: [["role": "system", "content": system], ["role": "user", "content": prompt]],
+                                   tools: [], thinking: false, maxTokens: maxTokens) {
+            if case let .content(c) = ev { text += c }
+        }
+        return text
+    }
+
     static func complete(model: String, prompt: String, system: String?, maxTokens: Int) async throws -> String {
         var messages: [[String: Any]] = []
         if let system { messages.append(["role": "system", "content": system]) }

@@ -36,7 +36,7 @@ struct ToolsView: View {
                     if app.mcp.servers.isEmpty {
                         Text("Noch keine MCP-Server. Starte mit einer Vorlage:").foregroundStyle(.secondary)
                     }
-                    ForEach(app.mcp.servers) { MCPServerRow(server: $0) }
+                    ForEach(app.mcp.allServers) { MCPServerRow(server: $0) }
                     Divider()
                     Text("Vorlagen").font(.subheadline.weight(.semibold))
                     HStack {
@@ -82,7 +82,9 @@ private struct MCPServerRow: View {
             HStack(spacing: 10) {
                 Circle().fill(color(status)).frame(width: 8, height: 8)
                 Text(server.name).font(.callout.weight(.semibold))
-                Text(([server.command] + server.args).joined(separator: " "))
+                if let plugin = server.plugin { Chip(text: plugin, systemImage: "puzzlepiece.extension") }
+                if server.type == "http" { Chip(text: "HTTP", tint: Theme.blue) }
+                Text(server.summary)
                     .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Text(label(status)).font(.caption).foregroundStyle(.secondary)
@@ -92,10 +94,12 @@ private struct MCPServerRow: View {
                 }
                 Button { Task { await app.mcp.connect(server) } } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless).help("Neu verbinden")
-                Toggle("", isOn: Binding(get: { server.enabled }, set: { app.mcp.setEnabled(server.name, $0) }))
-                    .toggleStyle(.switch).controlSize(.small)
-                Button(role: .destructive) { app.mcp.remove(server.name) } label: { Image(systemName: "trash") }
-                    .buttonStyle(.borderless)
+                if server.plugin == nil {
+                    Toggle("", isOn: Binding(get: { server.enabled }, set: { app.mcp.setEnabled(server.name, $0) }))
+                        .toggleStyle(.switch).controlSize(.small)
+                    Button(role: .destructive) { app.mcp.remove(server.name) } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless)
+                }
             }
             if expanded { ForEach(tools) { ToolLine(tool: $0) }.padding(.leading, 18) }
         }
@@ -133,6 +137,10 @@ struct MCPPreset {
                                               args: ["-y", "@modelcontextprotocol/server-filesystem", workspace.path])),
             MCPPreset(title: "Gedächtnis", icon: "brain.head.profile",
                       config: MCPServerConfig(name: "memory", command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"])),
+            MCPPreset(title: "Browser (Playwright)", icon: "safari",
+                      config: MCPServerConfig(name: "playwright", command: "npx", args: ["-y", "@playwright/mcp@latest"])),
+            MCPPreset(title: "Chrome DevTools", icon: "hammer.circle",
+                      config: MCPServerConfig(name: "chrome-devtools", command: "npx", args: ["-y", "chrome-devtools-mcp@latest"])),
             MCPPreset(title: "Schrittweises Denken", icon: "list.number",
                       config: MCPServerConfig(name: "sequential-thinking", command: "npx",
                                               args: ["-y", "@modelcontextprotocol/server-sequential-thinking"])),
@@ -144,6 +152,9 @@ private struct AddMCPServerSheet: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
+    @State private var type = "stdio"
+    @State private var url = ""
+    @State private var headers = ""
     @State private var command = ""
     @State private var args = ""
     @State private var env = ""
@@ -153,9 +164,19 @@ private struct AddMCPServerSheet: View {
             Text("MCP-Server hinzufügen").font(.title2.bold())
             Form {
                 TextField("Name", text: $name, prompt: Text("z. B. github"))
-                TextField("Befehl", text: $command, prompt: Text("npx, uvx, node, /pfad/zum/server"))
-                TextField("Argumente", text: $args, prompt: Text("-y @modelcontextprotocol/server-github"))
-                TextField("Umgebung", text: $env, prompt: Text("KEY=wert, eine pro Zeile"), axis: .vertical).lineLimit(2...5)
+                Picker("Art", selection: $type) {
+                    Text("Programm (stdio)").tag("stdio")
+                    Text("Remote (HTTP)").tag("http")
+                }
+                .pickerStyle(.segmented)
+                if type == "stdio" {
+                    TextField("Befehl", text: $command, prompt: Text("npx, uvx, node, /pfad/zum/server"))
+                    TextField("Argumente", text: $args, prompt: Text("-y @modelcontextprotocol/server-github"))
+                } else {
+                    TextField("URL", text: $url, prompt: Text("https://example.com/mcp"))
+                    TextField("Header", text: $headers, prompt: Text("Authorization=Bearer ${TOKEN}, einer pro Zeile"), axis: .vertical).lineLimit(1...4)
+                }
+                TextField("Umgebung", text: $env, prompt: Text("KEY=wert, eine pro Zeile – ${VAR} wird ersetzt"), axis: .vertical).lineLimit(2...5)
             }
             .formStyle(.grouped)
             HStack {
@@ -163,21 +184,26 @@ private struct AddMCPServerSheet: View {
                 Button("Abbrechen") { dismiss() }
                 Button("Hinzufügen") {
                     let config = MCPServerConfig(
-                        name: name.trimmingCharacters(in: .whitespaces), command: command.trimmingCharacters(in: .whitespaces),
+                        name: name.trimmingCharacters(in: .whitespaces), type: type,
+                        command: command.trimmingCharacters(in: .whitespaces),
                         args: args.split(separator: " ").map(String.init),
-                        env: Dictionary(env.split(separator: "\n").compactMap { line -> (String, String)? in
-                            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-                            return parts.count == 2 ? (parts[0], parts[1]) : nil
-                        }, uniquingKeysWith: { $1 }))
+                        env: pairs(env), url: url.trimmingCharacters(in: .whitespaces), headers: pairs(headers))
                     app.mcp.add(config)
                     Task { await app.mcp.connect(config) }
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(name.isEmpty || command.isEmpty)
+                .disabled(name.isEmpty || (type == "stdio" ? command.isEmpty : !url.hasPrefix("http")))
             }
         }
         .padding(22)
-        .frame(width: 520)
+        .frame(width: 560)
+    }
+
+    private func pairs(_ text: String) -> [String: String] {
+        Dictionary(text.split(separator: "\n").compactMap { line -> (String, String)? in
+            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            return parts.count == 2 ? (parts[0], parts[1]) : nil
+        }, uniquingKeysWith: { $1 })
     }
 }

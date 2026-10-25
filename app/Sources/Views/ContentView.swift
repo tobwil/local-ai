@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum Screen: String, CaseIterable, Identifiable {
-    case overview, agent, models, tools, connect, log
+    case overview, agent, models, compare, extensions, tools, connect, settings, log
     var id: String { rawValue }
 
     var title: String {
@@ -9,7 +9,10 @@ enum Screen: String, CaseIterable, Identifiable {
         case .overview: return "Übersicht"
         case .agent: return "Agent"
         case .models: return "Modelle"
+        case .compare: return "Vergleich"
+        case .extensions: return "Skills & Plugins"
         case .tools: return "Werkzeuge & MCP"
+        case .settings: return "Einstellungen"
         case .connect: return "Verbinden"
         case .log: return "Protokoll"
         }
@@ -20,7 +23,10 @@ enum Screen: String, CaseIterable, Identifiable {
         case .overview: return "gauge.with.dots.needle.67percent"
         case .agent: return "bubble.left.and.text.bubble.right"
         case .models: return "square.stack.3d.up"
+        case .compare: return "chart.bar.xaxis"
+        case .extensions: return "puzzlepiece.extension"
         case .tools: return "wrench.and.screwdriver"
+        case .settings: return "gearshape"
         case .connect: return "point.3.connected.trianglepath.dotted"
         case .log: return "text.alignleft"
         }
@@ -44,7 +50,10 @@ struct ContentView: View {
                 case .overview: OverviewView(screen: $screen)
                 case .agent: AgentView()
                 case .models: ModelsView()
+                case .compare: CompareView()
+                case .extensions: ExtensionsView()
                 case .tools: ToolsView()
+                case .settings: SettingsView()
                 case .connect: ConnectView()
                 case .log: LogView()
                 }
@@ -63,7 +72,7 @@ struct SidebarStatus: View {
             StatusDot(state: app.server.state)
             VStack(alignment: .leading, spacing: 1) {
                 Text(app.server.state.label).font(.caption.weight(.semibold)).lineLimit(1)
-                Text(app.selectedModel?.name ?? "Kein Modell").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                Text(app.selectedModelName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
         }

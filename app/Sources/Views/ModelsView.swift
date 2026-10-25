@@ -2,15 +2,29 @@ import SwiftUI
 
 struct ModelsView: View {
     @Environment(AppState.self) private var app
+    @State private var tab = 0
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                ForEach(ModelCatalog.all) { ModelRow(model: $0) }
-                Text("Modelle liegen unter \(Paths.models.path). oMLX bietet alle installierten Modelle an und lädt das gewählte beim ersten Aufruf.")
-                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 0) {
+            Picker("", selection: $tab) {
+                Text("Meine Modelle").tag(0)
+                Text("Hugging Face durchsuchen").tag(1)
             }
-            .padding(24)
+            .pickerStyle(.segmented).frame(maxWidth: 420).padding(14)
+            Divider()
+            if tab == 0 {
+                ScrollView {
+                    VStack(spacing: 14) {
+                        ForEach(app.allModels) { ModelRow(model: $0) }
+                        if !CloudModels.all.isEmpty { CloudModelsCard() }
+                        Text("Modelle liegen unter \(Paths.models.path). oMLX bietet alle installierten Modelle an und lädt das gewählte beim ersten Aufruf.")
+                            .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(24)
+                }
+            } else {
+                HubView(onInstalled: { tab = 0 })
+            }
         }
     }
 }
@@ -30,6 +44,8 @@ private struct ModelRow: View {
                         Text(model.name).font(.title3.weight(.semibold))
                         if model.id == app.recommended?.id { Chip(text: "Empfehlung", systemImage: "star.fill", tint: Theme.violet) }
                         if selected { Chip(text: "aktiv", systemImage: "checkmark", tint: .green) }
+                        if model.vision { Chip(text: "Vision", systemImage: "eye", tint: Theme.teal) }
+                        if model.origin != "Katalog" { Chip(text: model.origin, systemImage: "shippingbox") }
                     }
                     Text(model.summary).foregroundStyle(.secondary)
                     HStack(spacing: 6) {
@@ -83,6 +99,31 @@ private struct ModelRow: View {
                 }
                 Button(role: .destructive) { app.moveToTrash(model) } label: { Label("In den Papierkorb", systemImage: "trash") }
                     .buttonStyle(.borderless).font(.caption)
+            }
+        }
+    }
+}
+
+
+private struct CloudModelsCard: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        Card {
+            HStack {
+                Label("Cloud-Modelle", systemImage: "cloud").font(.title3.weight(.semibold))
+                Chip(text: "Daten verlassen den Mac", systemImage: "exclamationmark.shield", tint: .orange)
+            }
+            ForEach(CloudModels.all, id: \.self) { id in
+                HStack {
+                    Text(CloudModels.displayName(id)).font(.callout.monospaced())
+                    Spacer()
+                    if app.selectedModelID == id {
+                        Chip(text: "aktiv", systemImage: "checkmark", tint: .green)
+                    } else {
+                        Button("Verwenden") { app.selectedModelID = id }
+                    }
+                }
             }
         }
     }
