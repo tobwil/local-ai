@@ -1,0 +1,113 @@
+{
+  "label": "/Users/tobias/.strata-lite/models/Qwen3.6-35B-A3B-UD-MLX-3bit @ http://127.0.0.1:8000/v1",
+  "tag": "qwen36-3bit-dflash",
+  "backend": "http",
+  "machine": {
+    "chip": "Apple M4",
+    "model": "Mac16,12",
+    "memory_gb": 24,
+    "macos": "26.6.2",
+    "gpu_wired_limit_mb": "0",
+    "power": "AC",
+    "low_power_mode": false
+  },
+  "args": {
+    "cmd": "http",
+    "base_url": "http://127.0.0.1:8000/v1",
+    "model": null,
+    "workloads": "chat,code,context",
+    "contexts": "1k,4k,8k,16k",
+    "max_tokens": 256,
+    "repeat": 2,
+    "temp": 0.0,
+    "no_think": true,
+    "sustain": 0,
+    "tag": "qwen36-3bit-dflash"
+  },
+  "samples": [
+    {
+      "workload": "chat",
+      "target_ctx": 0,
+      "prompt_tokens": 68,
+      "gen_tokens": 256,
+      "ttft_s": 0.5750404158607125,
+      "prompt_tps": 118.25255777581918,
+      "decode_tps": 22.321155922652217,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4824.44,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792935428.233784
+    },
+    {
+      "workload": "chat",
+      "target_ctx": 0,
+      "prompt_tokens": 66,
+      "gen_tokens": 256,
+      "ttft_s": 0.5881740830373019,
+      "prompt_tps": 112.21167661652017,
+      "decode_tps": 22.651370614919756,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4792.44,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792935440.091491
+    },
+    {
+      "workload": "code",
+      "target_ctx": 0,
+      "prompt_tokens": 2741,
+      "gen_tokens": 256,
+      "ttft_s": 8.054672040976584,
+      "prompt_tps": 340.2993922105945,
+      "decode_tps": 101.60659110237711,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4744.44,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792935450.672666
+    },
+    {
+      "workload": "code",
+      "target_ctx": 0,
+      "prompt_tokens": 2738,
+      "gen_tokens": 256,
+      "ttft_s": 7.9944559161085635,
+      "prompt_tps": 342.4873473231644,
+      "decode_tps": 99.4875933643466,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4688.44,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792935461.243853
+    },
+    {
+      "workload": "context",
+      "target_ctx": 1024,
+      "prompt_tokens": 975,
+      "gen_tokens": 256,
+      "ttft_s": 2.938413665862754,
+      "prompt_tps": 331.81168850633156,
+      "decode_tps": 23.83853654386397,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4584.44,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792935474.9115222
+    },
+    {
+      "workload": "context",
+      "target_ctx": 1024,
+      "prompt_tokens": 977,
+      "gen_tokens": 256,
+      "ttft_s": 2.9826457500457764,
+      "prompt_tps": 327.5615282119928,
+      "decode_tps": 26.379931751931856,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4576.44,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792935487.5754821
+    }
+  ]
+}

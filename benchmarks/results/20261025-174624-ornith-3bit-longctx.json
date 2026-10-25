@@ -1,0 +1,43 @@
+{
+  "label": "Ornith-1.5-35B-A3B-oQ3e-mtp @ http://127.0.0.1:8000/v1",
+  "tag": "ornith-3bit-longctx",
+  "backend": "http",
+  "machine": {
+    "chip": "Apple M4",
+    "model": "Mac16,12",
+    "memory_gb": 24,
+    "macos": "26.6.2",
+    "gpu_wired_limit_mb": "0",
+    "power": "AC",
+    "low_power_mode": false
+  },
+  "args": {
+    "cmd": "http",
+    "base_url": "http://127.0.0.1:8000/v1",
+    "model": "Ornith-1.5-35B-A3B-oQ3e-mtp",
+    "workloads": "context",
+    "contexts": "16k,32k,64k,96k",
+    "max_tokens": 128,
+    "repeat": 1,
+    "temp": 0.0,
+    "no_think": true,
+    "sustain": 0,
+    "tag": "ornith-3bit-longctx"
+  },
+  "samples": [
+    {
+      "workload": "context",
+      "target_ctx": 16384,
+      "prompt_tokens": 14334,
+      "gen_tokens": 128,
+      "ttft_s": 37.622198208002374,
+      "prompt_tps": 380.9984711885099,
+      "decode_tps": 36.00716670176567,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4615.56,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792946732.5535848
+    }
+  ]
+}
