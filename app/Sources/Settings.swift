@@ -43,6 +43,16 @@ final class AppSettings {
     var pimEnabled: Bool { didSet { UserDefaults.standard.set(pimEnabled, forKey: "pimEnabled") } }
     /// Bildschirmfotos für den Agenten (look_at_screen) und im Gesprächsmodus.
     var screenEnabled: Bool { didSet { UserDefaults.standard.set(screenEnabled, forKey: "screenEnabled") } }
+    /// Ort für Wetter im Briefing.
+    var homeLocation: String { didSet { UserDefaults.standard.set(homeLocation, forKey: "homeLocation") } }
+    var lanEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(lanEnabled, forKey: "lanEnabled")
+            if lanEnabled && Keychain.get("lanKey") == nil { lanKey = HomeNetwork.newKey() }
+        }
+    }
+    private(set) var lanKey: String
+    func regenerateLanKey() { lanKey = HomeNetwork.newKey() }
 
     init() {
         let d = UserDefaults.standard
@@ -64,6 +74,9 @@ final class AppSettings {
         readAloud = d.bool(forKey: "readAloud")
         pimEnabled = d.bool(forKey: "pimEnabled")
         screenEnabled = d.object(forKey: "screenEnabled") as? Bool ?? true
+        homeLocation = d.string(forKey: "homeLocation") ?? ""
+        lanEnabled = d.bool(forKey: "lanEnabled")
+        lanKey = Keychain.get("lanKey") ?? ""
     }
 }
 

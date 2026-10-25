@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var cloudNote: String?
     @State private var browserTest: String?
     @State private var gpuNote: String?
+    @State private var showKey = false
 
     private func refresh(anthropic: Bool) {
         Task {
@@ -46,6 +47,40 @@ struct SettingsView: View {
                     }
                     if testing { ProgressView().controlSize(.small) }
                     if let testResult { Text(testResult).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                }
+            }
+
+            Section("Heimnetz: iPhone & andere Geräte") {
+                Toggle("KI/lokal im Heimnetz freigeben (mit Schlüssel)", isOn: Binding(get: { settings.lanEnabled }, set: { on in
+                    settings.lanEnabled = on
+                    if app.server.state == .running { Task { await app.server.restart() } }
+                }))
+                if settings.lanEnabled {
+                    HStack(alignment: .top, spacing: 16) {
+                        if let qr = HomeNetwork.qrCode(HomeNetwork.webChatURL) {
+                            Image(nsImage: qr).interpolation(.none).resizable().frame(width: 150, height: 150)
+                                .padding(6).background(.white, in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Mit dem iPhone scannen → Web-Chat öffnen → mit dem Schlüssel anmelden.").font(.callout)
+                            LabeledContent("Web-Chat", value: HomeNetwork.webChatURL).textSelection(.enabled)
+                            LabeledContent("API (OpenAI)", value: HomeNetwork.apiURL).textSelection(.enabled)
+                            if let ip = HomeNetwork.ipAddress { LabeledContent("IP-Adresse", value: ip).textSelection(.enabled) }
+                            HStack {
+                                Text("Schlüssel").foregroundStyle(.secondary)
+                                Text(showKey ? settings.lanKey : String(repeating: "•", count: 16)).font(.callout.monospaced()).textSelection(.enabled)
+                                Button(showKey ? "Verbergen" : "Zeigen") { showKey.toggle() }.buttonStyle(.borderless)
+                                Button("Kopieren") { AppState.copy(settings.lanKey) }.buttonStyle(.borderless)
+                                Button("Neu erzeugen") {
+                                    settings.regenerateLanKey()
+                                    if app.server.state == .running { Task { await app.server.restart() } }
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                    Text("Nur im eigenen WLAN nutzen. macOS fragt beim ersten Start, ob eingehende Verbindungen erlaubt sind. Apps wie Chatbox, Enchanted oder Open WebUI brauchen API-URL, Schlüssel und Modell \(app.selectedModelID).")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
 

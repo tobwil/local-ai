@@ -14,7 +14,7 @@ case $mode in
     # nach dem freien RAM und lehnt das Modell ab, wenn andere Apps viel belegen.
     # SSD-KV-Cache: lange Agent-Prompts müssen nicht jedes Mal neu verarbeitet werden.
     exec $BASE/omlx-venv/bin/omlx serve \
-      --model-dir $MODELS --port 8000 \
+      --model-dir $MODELS --port 8000 --host 127.0.0.1 \
       --memory-guard-gb ${OMLX_GUARD_GB:-17.7} \
       --paged-ssd-cache-dir $BASE/kv-cache --paged-ssd-cache-max-size 10GB
     ;;

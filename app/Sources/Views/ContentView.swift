@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum Screen: String, CaseIterable, Identifiable {
-    case overview, agent, models, compare, extensions, tools, connect, settings, log
+    case overview, agent, knowledge, automations, models, compare, extensions, tools, connect, settings, log
     var id: String { rawValue }
 
     var title: String {
@@ -9,6 +9,8 @@ enum Screen: String, CaseIterable, Identifiable {
         case .overview: return "Übersicht"
         case .agent: return "Agent"
         case .models: return "Modelle"
+        case .knowledge: return "Wissen"
+        case .automations: return "Automationen"
         case .compare: return "Vergleich"
         case .extensions: return "Skills & Plugins"
         case .tools: return "Werkzeuge & MCP"
@@ -23,6 +25,8 @@ enum Screen: String, CaseIterable, Identifiable {
         case .overview: return "gauge.with.dots.needle.67percent"
         case .agent: return "bubble.left.and.text.bubble.right"
         case .models: return "square.stack.3d.up"
+        case .knowledge: return "books.vertical"
+        case .automations: return "clock.badge.checkmark"
         case .compare: return "chart.bar.xaxis"
         case .extensions: return "puzzlepiece.extension"
         case .tools: return "wrench.and.screwdriver"
@@ -57,6 +61,8 @@ struct ContentView: View {
                 case .overview: OverviewView(screen: $screen)
                 case .agent: AgentView()
                 case .models: ModelsView()
+                case .knowledge: KnowledgeView()
+                case .automations: AutomationsView()
                 case .compare: CompareView()
                 case .extensions: ExtensionsView()
                 case .tools: ToolsView()

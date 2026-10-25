@@ -46,6 +46,7 @@ enum LLMClient {
                         body[b.host == "api.openai.com" ? "max_completion_tokens" : "max_tokens"] = maxTokens
                         if thinking { body["reasoning_effort"] = "high" }
                     } else {
+                        HomeNetwork.authorize(&req)
                         body["max_tokens"] = maxTokens
                         body["chat_template_kwargs"] = ["enable_thinking": thinking]
                         if !mtp { req.setValue("off", forHTTPHeaderField: "X-oMLX-MTP") }
@@ -135,6 +136,7 @@ enum LLMClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         req.timeoutInterval = 1800
+        HomeNetwork.authorize(&req)
         let (data, resp) = try await URLSession.shared.data(for: req)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200,
@@ -146,7 +148,9 @@ enum LLMClient {
     }
 
     static func models() async throws -> [String] {
-        let (data, _) = try await URLSession.shared.data(from: Paths.openAIBase.appendingPathComponent("models"))
+        var req = URLRequest(url: Paths.openAIBase.appendingPathComponent("models"))
+        HomeNetwork.authorize(&req)
+        let (data, _) = try await URLSession.shared.data(for: req)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         return (json?["data"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
     }

@@ -74,13 +74,16 @@ die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
 | Bereich | Was er kann |
 |---|---|
 | **Übersicht** | erkennt Chip, RAM, GPU-Limit, Bandbreite und SSD, empfiehlt das passende Modell, zeigt erwartete tok/s; richtet die Engine per Klick ein |
+| **Wissen** | eigene Ordner indexieren (Text, Markdown, PDF, Word, RTF, HTML, Code), Hybrid-Suche aus Stichwörtern und Bedeutung (Embeddings von macOS, auf dem Gerät), Quellenangabe |
+| **Automationen** | Aufträge nach Zeitplan (Uhrzeit + Wochentage oder Intervall), Vorlage **Morgen-Briefing**, Ergebnis als Mitteilung, vorgelesen oder Datei; Start bei Anmeldung |
 | **Agent** | Chat mit Streaming und Live-tok/s, **Gesprächsmodus**, Diktat und Vorlesen, Bilder und Bildschirmfotos (Vision), Slash-Befehle, Verlauf; Werkzeuge mit Freigabe oder YOLO |
 | **Modelle** | Katalog (Ornith, Qwen 3.6 Vision, Gemma 4, LFM2.5, Mellum), lokal gefundene Modelle, Cloud-Modelle; **Hugging-Face-Browser** mit Bewertung „läuft gut / langsam / knapp / zu groß“, tok/s-Schätzung und Prüfung, ob die installierte Engine die Architektur kennt |
 | **Vergleich** | lokale Modelle gegen GPT-6 Astra, GPT-6.1 Sol, GPT-5.5/5.6, Claude Opus 5/5.5, Fable 5.1, Mythos 5, Gemini 3.1 – SWE-bench Verified/Pro, Terminal-Bench, GPQA, HLE, ARC-AGI-2 (Stand 25.10.2026, mit Quellen) |
 | **Skills & Plugins** | Claude-Code-Format: Skills (`SKILL.md`), Plugins mit Befehlen, Sub-Agenten und MCP; Katalog aus Marketplaces (offizieller Anthropic-Katalog, eigene per Git), Installation per Klick |
 | **Werkzeuge & MCP** | MCP-Client für stdio- und HTTP-Server (Format wie Claude Desktop, Import, Vorlagen, `${VAR}`-Ersetzung) |
 | **Verbinden** | Claude Code / Claude Desktop / OpenAI-kompatible Clients; die App selbst als MCP-Server (`--mcp-server`) |
-| **Einstellungen** | YOLO-Modus + Notbremse, Browser-Steuerung, Kalender/Erinnerungen/Kontakte/Mail, GPU-Speicher erhöhen, Engine einrichten, Websuche (DuckDuckGo, SearXNG, Brave), Modell-Router nach Thema, Cloud-Anbieter (Anthropic, OpenAI-kompatibel), Experte für `ask_expert`, eigene Anweisungen |
+| **Protokoll** | jede Werkzeug-Aktion des Agenten (Freigabe, YOLO, unbeaufsichtigt) in `~/.strata-lite/logs/actions.jsonl`, dazu Engine- und MCP-Log |
+| **Einstellungen** | Heimnetz-Freigabe (iPhone per QR-Code), YOLO-Modus + Notbremse, Browser-Steuerung, Kalender/Erinnerungen/Kontakte/Mail, GPU-Speicher erhöhen, Engine einrichten, Websuche (DuckDuckGo, SearXNG, Brave), Modell-Router nach Thema, Cloud-Anbieter (Anthropic, OpenAI-kompatibel), Experte für `ask_expert`, eigene Anweisungen |
 
 **Werkzeuge des Agenten:**
 
@@ -91,7 +94,7 @@ die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
 | Dein Browser | `browser_tabs`, `browser_open`, `browser_read`, `browser_click`, `browser_type`, `browser_scroll`, `browser_back` – Brave, Chrome, Edge, Arc, Safari über JavaScript for Automation |
 | Mac | `clipboard_read`, `clipboard_write`, `notify`, `look_at_screen` (Bildschirmfoto → Vision-Modell) |
 | Kalender & Co. | `calendar_events`, `calendar_create`, `reminders_list`, `reminders_create`, `contacts_search`, `mail_recent`, `mail_draft` (nur Entwürfe, nie selbst senden) |
-| Gedächtnis | `remember`, `forget` – gilt in allen Gesprächen (`~/.strata-lite/memory.md`) |
+| Gedächtnis & Wissen | `remember`, `forget` (`~/.strata-lite/memory.md`), `search_documents` (eigene Ordner) |
 | Agenten | `use_skill`, `run_agent` (Sub-Agenten aus Plugins), `ask_expert` (Cloud-Briefing) |
 | MCP | alle Werkzeuge verbundener MCP-Server, Vorlagen u. a. Playwright und Chrome DevTools |
 
@@ -115,7 +118,18 @@ installierten Systemstimme – ohne zusätzliches Modell im knappen Speicher.
 
 **Tempo-Modus „Automatisch“:** MTP nur für Code-Aufgaben. Gemessen auf dem M4 Air: Chat 39 tok/s (ohne Spekulation),
 Code-Edit 82 tok/s (mit MTP) – pro Anfrage, ohne Neustart. Möglich durch den oMLX-Patch
-[`engine/patches/omlx-mtp-per-request.patch`](engine/patches/omlx-mtp-per-request.patch) (Header `X-oMLX-MTP: off`).
+[`engine/patches/omlx-mtp-per-request.patch`](engine/patches/omlx-mtp-per-request.patch) (Header `X-oMLX-MTP: off`),
+eingereicht als [jundot/omlx#4851](https://github.com/jundot/omlx/pull/4851).
+
+**Heimnetz:** Ein Schalter gibt KI/lokal im WLAN frei – mit zufälligem API-Schlüssel (Schlüsselbund). Das iPhone scannt den
+QR-Code und nutzt den Web-Chat von oMLX (`http://<Mac>.local:8000/admin/chat`), andere Apps die OpenAI-API. Ohne Freigabe lauscht
+der Server ausdrücklich nur auf `127.0.0.1` (oMLX merkt sich `--host` sonst dauerhaft).
+
+**Absturzberichte:** Nach einem Absturz zeigt die Übersicht einen Hinweis; „Melden“ öffnet ein vorausgefülltes GitHub-Issue
+(Version, macOS, Chip, Stack-Frames – keine persönlichen Daten), das du selbst abschickst.
+
+**Dauerlast:** 10 Minuten ununterbrochen auf dem lüfterlosen MacBook Air M4: Start 40 tok/s, nach ~5 Minuten stabil
+~30 tok/s (−24 % durch Wärme). Normales Chatten mit Pausen bleibt bei ~40 tok/s; lange Agenten-Läufe am Stück eher bei ~30.
 
 **Langer Kontext:** KV-Kompression (TurboQuant, 4 Bit) pro Modell + angepasste Speicherwächter: auf 24 GB ~29k Tokens
 bei 32,7 tok/s statt Abbruch bei 32k. Mit „GPU-Speicher erhöhen“ (Passwortabfrage, gilt bis zum Neustart) mehr.
@@ -128,10 +142,10 @@ app/Scripts/make-dmg.sh                    # signierte DMG (Developer ID, Harden
 "app/build/KI lokal.app/Contents/MacOS/KI lokal" --mcp-server      # lokales Modell als MCP-Server
 ```
 
-Daten liegen unter `~/.strata-lite/` (Engine, Modelle, Skills, Plugins, Gespräche, Gedächtnis).
+Daten liegen unter `~/.strata-lite/` (Engine, Modelle, Skills, Plugins, Gespräche, Gedächtnis, Wissensindex, Automationen, Protokoll).
 
 ## Nächste Schritte
 
-1. MTP-Patch als Pull Request an oMLX geben, damit er ohne eigenen Patch funktioniert.
-2. Notarisierung einrichten (`xcrun notarytool store-credentials`) und DMG veröffentlichen.
-3. 64k Kontext mit angehobenem GPU-Limit messen; Dauerlast-Test auf dem lüfterlosen Air.
+1. Review von [jundot/omlx#4851](https://github.com/jundot/omlx/pull/4851) begleiten; nach dem Merge den eigenen Patch entfernen.
+2. Notarisierung einrichten (`xcrun notarytool store-credentials`) und DMG veröffentlichen; Einrichtungs-Assistent beim ersten Start.
+3. 64k Kontext mit angehobenem GPU-Limit messen (Knopf in den Einstellungen, braucht dein Passwort).

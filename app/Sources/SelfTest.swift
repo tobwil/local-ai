@@ -241,6 +241,63 @@ enum SelfTest {
             return "Phasen \(phases.map { "\($0)" }.joined(separator: " → ")) · Antwort: \(answer.prefix(120))"
         }) { failed += 1 }
 
+        if !(await check("Wissen: Indexieren und Bedeutungssuche") {
+            let docs = tmp.appendingPathComponent("wissen")
+            try? FileManager.default.removeItem(at: docs)
+            try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
+            try "Am Dienstag um 10 Uhr haben wir einen Termin in der Steuerkanzlei Huber wegen der Umsatzsteuer-Voranmeldung.".write(to: docs.appendingPathComponent("termine.md"), atomically: true, encoding: .utf8)
+            try "Rezept: Für den Hefezopf 500 g Mehl, 1 Würfel Hefe, 80 g Zucker und 250 ml Milch verwenden.".write(to: docs.appendingPathComponent("backen.txt"), atomically: true, encoding: .utf8)
+            try "Die Wallbox in der Garage lädt mit 11 kW. Das Ladekabel liegt im Kofferraum.".write(to: docs.appendingPathComponent("auto.md"), atomically: true, encoding: .utf8)
+            try "Unser Mitarbeiter Jonas hat im November Urlaub und ist dann nicht erreichbar.".write(to: docs.appendingPathComponent("team.md"), atomically: true, encoding: .utf8)
+            try "Das Angebot für den Malteser-Auftrag muss bis Freitag eingereicht werden.".write(to: docs.appendingPathComponent("angebote.md"), atomically: true, encoding: .utf8)
+            let store = await Store.build(folders: [docs], previous: Store()) { _ in }
+            // Fragen ohne gemeinsame Wörter mit dem richtigen Dokument.
+            let cases = [("Wann treffe ich den Steuerberater?", "termine.md"), ("Wie lade ich mein Elektroauto?", "auto.md"),
+                         ("Wer ist im Herbst abwesend?", "team.md"), ("Bis wann ist die Ausschreibung fällig?", "angebote.md"),
+                         ("Was brauche ich zum Backen?", "backen.txt")]
+            var right: [String] = [], wrong: [String] = []
+            for (q, want) in cases {
+                let top = store.search(q, topK: 1).first.map { ($0.chunk.path as NSString).lastPathComponent } ?? "–"
+                if top == want { right.append(want) } else { wrong.append("\(q) → \(top)") }
+            }
+            guard right.count >= 4 else { throw ToolError.invalid("nur \(right.count)/5: \(wrong)") }
+            return "\(store.files.count) Dateien, Dimension \(store.dim) · Bedeutungssuche \(right.count)/5 richtig\(wrong.isEmpty ? "" : " (daneben: \(wrong.joined(separator: "; ")))")"
+        }) { failed += 1 }
+
+        if !(await check("Automationen: Zeitplan") {
+            let cal = Calendar.current
+            // Freitag 2026-10-23 08:00 → nächster Lauf Mo–Fr 7:30 = Montag 2026-10-26 07:30
+            let friday = cal.date(from: DateComponents(year: 2026, month: 10, day: 23, hour: 8))!
+            let a = Automation.briefing(location: "Rostock")
+            let next = a.nextRun(after: friday)!
+            let c = cal.dateComponents([.year, .month, .day, .hour, .minute], from: next)
+            guard c.day == 26, c.hour == 7, c.minute == 30 else { throw ToolError.invalid("nächster Lauf \(next)") }
+            var every = Automation(name: "x", prompt: "y", intervalMinutes: 60)
+            every.lastRun = friday
+            guard every.nextRun(after: friday) == friday.addingTimeInterval(3600) else { throw ToolError.invalid("Intervall") }
+            return "Fr 08:00 → \(next.formatted(date: .abbreviated, time: .shortened)) (\(a.scheduleText)), stündlich ✓"
+        }) { failed += 1 }
+
+        if !model.isEmpty, !(await check("Automationen: unbeaufsichtigter Lauf") {
+            let app = await MainActor.run { AppState.shared }
+            await app.server.probe()
+            let task = Automation(name: "Test", prompt: "Welcher Wochentag ist heute? Antworte in einem kurzen Satz, ohne Werkzeuge.", outputs: [])
+            let out = try await app.runAutomation(task)
+            let weekday = Date().formatted(.dateTime.weekday(.wide).locale(Locale(identifier: "de_DE")))
+            guard out.localizedCaseInsensitiveContains(weekday) else { throw ToolError.invalid("Antwort: \(out.prefix(120)) (erwartet \(weekday))") }
+            return out.replacingOccurrences(of: "\n", with: " ").prefix(120).description
+        }) { failed += 1 }
+
+        if !(await check("Aktionsprotokoll & Absturzberichte") {
+            try? await Task.sleep(for: .milliseconds(300))   // Schreibwarteschlange des Protokolls
+            let recent = ActionLog.recent(50)
+            guard model.isEmpty || recent.contains(where: { $0.tool == "web_search" }) else { throw ToolError.invalid("web_search fehlt im Protokoll") }
+            let files = (try? FileManager.default.contentsOfDirectory(at: CrashReports.dir, includingPropertiesForKeys: nil)) ?? []
+            let parsed = files.filter { $0.pathExtension == "ips" }.prefix(20).compactMap { CrashReports.parse($0, date: Date()) }
+            let sample = parsed.first.map { "\($0.exception), \($0.frames.count) Frames" } ?? "keine Berichte vorhanden"
+            return "\(recent.count) Einträge (zuletzt \(recent.first.map { "\($0.tool) [\($0.approval)]" } ?? "–")) · Bericht lesbar: \(sample)"
+        }) { failed += 1 }
+
         if !(await check("Modell-Router") {
             let cases: [(String, Bool, ModelRouter.Topic)] = [
                 ("Wie hoch ist der Mount Everest?", false, .general),

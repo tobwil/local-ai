@@ -7,6 +7,7 @@ struct OverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                CrashBanner()
                 hero
                 HardwareGrid(hw: app.hardware)
                 fitList
@@ -215,5 +216,41 @@ struct EngineSetupCard: View {
             }
         }
         .padding(.top, 6)
+    }
+}
+
+
+/// Hinweis nach einem Absturz: ansehen oder als GitHub-Issue melden (der Nutzer schickt selbst ab).
+struct CrashBanner: View {
+    @State private var reports = CrashReports.unseen()
+
+    var body: some View {
+        if let r = reports.first {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("KI/lokal ist beim letzten Mal abgestürzt").font(.headline)
+                    Text("\(r.exception) · \(r.date.formatted(date: .abbreviated, time: .shortened)) – ein Bericht hilft, den Fehler zu beheben. Er enthält nur Version, macOS, Chip und die Stelle im Code.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Melden …") {
+                            if let url = CrashReports.issueURL(r) { NSWorkspace.shared.open(url) }
+                            dismiss()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button("Bericht ansehen") { NSWorkspace.shared.activateFileViewerSelecting([r.url]) }
+                        Button("Ignorieren") { dismiss() }
+                    }
+                }
+                Spacer()
+            }
+            .padding(16)
+            .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private func dismiss() {
+        CrashReports.markSeen()
+        reports = []
     }
 }

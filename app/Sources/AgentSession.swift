@@ -152,6 +152,9 @@ final class AgentSession {
             - Anleitungen für Claude Code nennen Werkzeuge wie Read, Write, Edit, Bash, Grep, Glob, WebFetch, WebSearch, Task – \
             nutze dafür read_file, write_file, edit_file, run_shell, search_files, find_files, fetch_url, web_search, run_agent.
             """
+            if tools.contains(where: { $0.name == "search_documents" }) {
+                s += "\n- Eigene Dokumente des Nutzers: bei Fragen zu seinen Unterlagen, Projekten oder Notizen zuerst search_documents nutzen und die Datei als Quelle nennen."
+            }
             if tools.contains(where: { $0.name == "calendar_events" }) {
                 s += "\n- Kalender/Erinnerungen/Kontakte/Mail: Zeiten immer als ISO in Ortszeit (\(TimeZone.current.identifier)). Mails nur als Entwurf (mail_draft)."
             }
@@ -267,11 +270,16 @@ final class AgentSession {
         let parsed = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any]) ?? [:]
 
         let dangerous = dangerGuard ? Self.dangerReason(tool: tool.name, args: parsed) : nil
+        var approval = tool.needsApproval ? (autoApprove ? "YOLO" : "freigegeben") : "frei"
+        let started = Date()
         if tool.needsApproval && (!autoApprove || dangerous != nil) {
             update(.awaitingApproval, "")
             let ok = await withCheckedContinuation { approvals[itemID] = $0 }
+            if dangerous != nil { approval = "Notbremse → " + (ok ? "freigegeben" : "abgelehnt") }
             guard ok else {
                 update(.denied, "Abgelehnt")
+                ActionLog.log(context: "Chat", tool: tool.name, source: tool.source, arguments: args, approval: "abgelehnt",
+                              ok: false, started: started, result: "")
                 return "Der Nutzer hat diesen Aufruf abgelehnt."
             }
             update(.running, "")
@@ -279,9 +287,13 @@ final class AgentSession {
         do {
             let out = try await tool.run(parsed)
             update(.done, out)
+            ActionLog.log(context: "Chat", tool: tool.name, source: tool.source, arguments: args, approval: approval,
+                          ok: true, started: started, result: out)
             return out
         } catch {
             update(.failed, error.localizedDescription)
+            ActionLog.log(context: "Chat", tool: tool.name, source: tool.source, arguments: args, approval: approval,
+                          ok: false, started: started, result: error.localizedDescription)
             return "Fehler: \(error.localizedDescription)"
         }
     }
@@ -322,7 +334,8 @@ final class AgentSession {
     // MARK: Sub-Agent
 
     /// Führt einen Sub-Agenten ohne Rückfragen aus (nur lesende Werkzeuge) und liefert seine Schlussantwort.
-    static func runSubAgent(model: String, system: String, task: String, tools: [AgentTool], maxSteps: Int) async throws -> String {
+    static func runSubAgent(model: String, system: String, task: String, tools: [AgentTool], maxSteps: Int,
+                            logContext: String = "Sub-Agent") async throws -> String {
         var messages: [[String: Any]] = [["role": "system", "content": system], ["role": "user", "content": task]]
         let specs = tools.map(\.openAISpec)
         for _ in 0..<maxSteps {
@@ -342,7 +355,16 @@ final class AgentSession {
                 let args = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any]) ?? [:]
                 let out: String
                 if let tool = tools.first(where: { $0.name == call.name }) {
-                    out = (try? await tool.run(args)) ?? "Fehler bei \(call.name)"
+                    let started = Date()
+                    do {
+                        out = try await tool.run(args)
+                        ActionLog.log(context: logContext, tool: tool.name, source: tool.source, arguments: call.arguments,
+                                      approval: "unbeaufsichtigt", ok: true, started: started, result: out)
+                    } catch {
+                        out = "Fehler bei \(call.name): \(error.localizedDescription)"
+                        ActionLog.log(context: logContext, tool: tool.name, source: tool.source, arguments: call.arguments,
+                                      approval: "unbeaufsichtigt", ok: false, started: started, result: error.localizedDescription)
+                    }
                 } else {
                     out = "Werkzeug \(call.name) ist für Sub-Agenten nicht verfügbar."
                 }

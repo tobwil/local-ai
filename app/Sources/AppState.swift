@@ -15,6 +15,8 @@ final class AppState {
     let session = AgentSession()
     let voice = VoiceController()
     let installer = EngineInstaller()
+    let knowledge = KnowledgeBase()
+    let automations = AutomationCenter()
 
     // MARK: Gesprächsmodus
     enum TalkPhase: Equatable { case off, listening, thinking, speaking }
@@ -49,6 +51,11 @@ final class AppState {
             }
         }
         voice.onTranscript = { [weak self] text in self?.session.input = text }
+        automations.runner = { [weak self] a in
+            guard let self else { return "" }
+            return try await self.runAutomation(a)
+        }
+        automations.speak = { [weak self] text in self?.voice.speak(text) }
         voice.onUtterance = { [weak self] text in self?.talkSend(text) }
         voice.onSpeechFinished = { [weak self] in
             guard let self, self.talkPhase == .speaking else { return }
@@ -92,6 +99,7 @@ final class AppState {
         if settings.browserEnabled { tools += BrowserTools.all() }
         if useBuiltinTools { tools += SystemTools.all() }
         if settings.pimEnabled { tools += PIMTools.all() }
+        if knowledge.chunkCount > 0 { tools.append(knowledge.tool()) }
         if settings.screenEnabled { tools.append(ScreenCapture.lookTool { [weak self] in self?.visionModelID }) }
         if !plugins.skills.isEmpty { tools.append(skillTool) }
         if !plugins.agents.isEmpty { tools.append(subAgentTool) }
@@ -174,6 +182,7 @@ final class AppState {
         await server.probe()
         await mcp.connectAll()
         await mcp.setPluginServers(plugins.mcpServers)
+        automations.start()
         Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
@@ -200,6 +209,39 @@ final class AppState {
         server.memoryCeilingGiB = ((limitGiB - 0.05) * 10).rounded(.down) / 10
         if server.state == .running { await server.restart() }
         return nil
+    }
+
+    /// Führt eine geplante Aufgabe unbeaufsichtigt aus: Engine bei Bedarf starten, passende Werkzeuge, kein Nachfragen.
+    func runAutomation(_ a: Automation) async throws -> String {
+        if !selectedIsCloud && !server.state.isUp {
+            guard server.engineInstalled else { throw ToolError.invalid("Engine ist nicht eingerichtet") }
+            server.start()
+            for _ in 0..<240 where !server.state.isUp { try await Task.sleep(for: .milliseconds(500)) }
+            guard server.state.isUp else { throw ToolError.invalid("Server startet nicht") }
+        }
+        let ws = { [session] in session.workspace }
+        var tools = (BuiltinTools.files(ws) + BuiltinTools.web()).filter { BuiltinTools.readOnly.contains($0.name) }
+        tools += SystemTools.all().filter { ["notify", "clipboard_read", "remember"].contains($0.name) }
+        if knowledge.chunkCount > 0 { tools.append(knowledge.tool()) }
+        if settings.pimEnabled {
+            tools += PIMTools.all().filter { ["calendar_events", "reminders_list", "contacts_search", "mail_recent"].contains($0.name) }
+        }
+        if a.allowActions {
+            tools += BuiltinTools.files(ws).filter { !BuiltinTools.readOnly.contains($0.name) }
+            tools += SystemTools.all().filter { $0.name == "http_request" }
+            if settings.pimEnabled { tools += PIMTools.all().filter { ["calendar_create", "reminders_create", "mail_draft"].contains($0.name) } }
+            if settings.browserEnabled { tools += BrowserTools.all() }
+        }
+        tools += mcp.tools.filter { _ in a.allowActions }
+        let memory = SystemTools.memory().trimmingCharacters(in: .whitespacesAndNewlines)
+        let system = """
+        Du bist KI/lokal und führst die geplante Aufgabe „\(a.name)“ unbeaufsichtigt aus. Heute ist \(Date().formatted(date: .complete, time: .shortened)).
+        Es gibt keine Rückfragen an den Nutzer: nutze die Werkzeuge, erfinde nichts und liefere am Ende das fertige Ergebnis auf Deutsch.
+        \(memory.isEmpty ? "" : "Was du über den Nutzer weißt:\n\(memory.suffix(3000))")
+        \(settings.customInstructions)
+        """
+        return try await AgentSession.runSubAgent(model: selectedModelID, system: system, task: a.prompt, tools: tools, maxSteps: 16,
+                                                  logContext: "Automation: \(a.name)")
     }
 
     /// Vision-Modell für Bilder: das gewählte (falls es Bilder kann), sonst Router-Ziel oder erstes installiertes.

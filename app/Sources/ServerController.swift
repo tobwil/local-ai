@@ -51,6 +51,13 @@ final class ServerController {
             "--memory-guard-gb", String(format: "%.1f", memoryCeilingGiB),
             "--paged-ssd-cache-dir", Paths.kvCache.path, "--paged-ssd-cache-max-size", "10GB",
         ]
+        // Adresse immer ausdrücklich angeben: oMLX merkt sich --host in settings.json, und ein einmal
+        // freigegebener Server dürfte sonst später ohne Schlüssel im Netz lauschen.
+        if let key = HomeNetwork.key {
+            p.arguments! += ["--host", "0.0.0.0", "--api-key", key]   // Heimnetz, nur mit Schlüssel
+        } else {
+            p.arguments! += ["--host", "127.0.0.1"]
+        }
         var env = ProcessInfo.processInfo.environment
         env["PYTHONUNBUFFERED"] = "1"
         p.environment = env
@@ -128,6 +135,7 @@ final class ServerController {
     private func fetchModels() async -> [String]? {
         var req = URLRequest(url: Paths.openAIBase.appendingPathComponent("models"))
         req.timeoutInterval = 2
+        HomeNetwork.authorize(&req)
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
               (resp as? HTTPURLResponse)?.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

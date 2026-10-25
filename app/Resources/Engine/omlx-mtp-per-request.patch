@@ -59,10 +59,10 @@ index 1ded8cd..377ae3b 100644
              benchmark_trace=benchmark_trace,
              benchmark_ane_sequence_length=benchmark_ane_sequence_length,
 diff --git a/omlx/patches/mlx_lm_mtp/batch_generator.py b/omlx/patches/mlx_lm_mtp/batch_generator.py
-index 3f3a16f..32690be 100644
+index 3f3a16f..d1ee828 100644
 --- a/omlx/patches/mlx_lm_mtp/batch_generator.py
 +++ b/omlx/patches/mlx_lm_mtp/batch_generator.py
-@@ -524,6 +524,10 @@ def _drafter_scope(model: Any, uids):
+@@ -524,6 +524,23 @@ def _drafter_scope(model: Any, uids):
          yield
  
  
@@ -70,10 +70,23 @@ index 3f3a16f..32690be 100644
 +MTP_OPT_OUT_UIDS: set[int] = set()
 +
 +
++def set_request_mtp_opt_out(uid: int, opted_out: bool) -> None:
++    """Record whether the request owning batch row ``uid`` opted out of MTP.
++
++    Batch uids are reused, so the scheduler calls this for every insertion
++    (and with ``False`` when the row is released) to keep a stale opt-out
++    from leaking into the next request on the same uid.
++    """
++    if opted_out:
++        MTP_OPT_OUT_UIDS.add(int(uid))
++    else:
++        MTP_OPT_OUT_UIDS.discard(int(uid))
++
++
  def _model_mtp_decode_enabled(model: Any) -> bool:
      """Return the MTP decode decision captured on the loaded model instance.
  
-@@ -609,6 +613,8 @@ def _mtp_common_eligible(gen_batch: Any) -> bool:
+@@ -609,6 +626,8 @@ def _mtp_common_eligible(gen_batch: Any) -> bool:
      uids = getattr(gen_batch, "uids", None)
      if uids is None or len(uids) == 0:
          return False
@@ -82,6 +95,15 @@ index 3f3a16f..32690be 100644
      if _has_grammar_processors(gen_batch):
          return False
      # XTC changes the target distribution but is absent from acceptance math.
+@@ -786,6 +805,8 @@ def _ineligibility_reason(gen_batch: Any) -> str:
+     uids = getattr(gen_batch, "uids", None)
+     if uids is None:
+         return "GenerationBatch has no uids"
++    if MTP_OPT_OUT_UIDS and any(int(u) in MTP_OPT_OUT_UIDS for u in uids):
++        return "request opted out of MTP (X-oMLX-MTP: off)"
+     if _has_xtc_sampler(gen_batch):
+         return "XTC sampling is not supported by Lightning MTP acceptance math"
+     if len(uids) != 1:
 diff --git a/omlx/request.py b/omlx/request.py
 index c1b0bc3..dfec9fa 100644
 --- a/omlx/request.py
@@ -97,40 +119,38 @@ index c1b0bc3..dfec9fa 100644
      # This is never set by ordinary API traffic.
      benchmark_trace: bool = False
 diff --git a/omlx/scheduler.py b/omlx/scheduler.py
-index fa5a79b..9b3eccd 100644
+index fa5a79b..ad16614 100644
 --- a/omlx/scheduler.py
 +++ b/omlx/scheduler.py
-@@ -2945,6 +2945,8 @@ class Scheduler:
+@@ -66,6 +66,7 @@ from .exceptions import (
+ from .patches.mlx_lm_mtp import prompt_priming as _mtp_priming
+ from .patches.mlx_lm_mtp.batch_generator import _drafter_for as _block_drafter_for
+ from .patches.mlx_lm_mtp.batch_generator import interrupt_batch_timing
++from .patches.mlx_lm_mtp.batch_generator import set_request_mtp_opt_out
+ from .patches.vlm_batch_kv_capacity import apply_batch_kv_capacity_patch
+ from .prefill.packed import (
+     PackedRow,
+@@ -2945,6 +2946,7 @@ class Scheduler:
                      # Cleanup uid maps now that the slot is reclaimable.
                      _unregister_uid_row(self.model, uid)
                      del self.uid_to_request_id[uid]
-+                    from .patches.mlx_lm_mtp.batch_generator import MTP_OPT_OUT_UIDS
-+                    MTP_OPT_OUT_UIDS.discard(int(uid))
++                    set_request_mtp_opt_out(uid, False)
                  if uid is not None and self.request_id_to_uid.get(request_id) == uid:
                      del self.request_id_to_uid[request_id]
                  self._inflight_store_futures.pop(request_id, None)
-@@ -7082,6 +7084,12 @@ class Scheduler:
+@@ -7082,6 +7084,7 @@ class Scheduler:
                  now = time.monotonic()
                  self.request_id_to_uid[request.request_id] = uid
                  self.uid_to_request_id[uid] = request.request_id
-+                from .patches.mlx_lm_mtp.batch_generator import MTP_OPT_OUT_UIDS
-+                # UIDs are reused; always reset the flag so a stale opt-out never leaks.
-+                if getattr(request, "mtp_opt_out", False):
-+                    MTP_OPT_OUT_UIDS.add(int(uid))
-+                else:
-+                    MTP_OPT_OUT_UIDS.discard(int(uid))
++                set_request_mtp_opt_out(uid, getattr(request, "mtp_opt_out", False))
                  self.running[request.request_id] = request
                  scheduled.append(request)
              except Exception:
-@@ -13444,6 +13452,11 @@ class Scheduler:
+@@ -13444,6 +13447,7 @@ class Scheduler:
                  self._dflash_bind_uid(request.request_id, uid)
                  self.request_id_to_uid[request.request_id] = uid
                  self.uid_to_request_id[uid] = request.request_id
-+                from .patches.mlx_lm_mtp.batch_generator import MTP_OPT_OUT_UIDS
-+                if getattr(request, "mtp_opt_out", False):
-+                    MTP_OPT_OUT_UIDS.add(int(uid))
-+                else:
-+                    MTP_OPT_OUT_UIDS.discard(int(uid))
++                set_request_mtp_opt_out(uid, getattr(request, "mtp_opt_out", False))
                  now = time.monotonic()
                  request.batch_uid = uid
                  request.status = RequestStatus.RUNNING
@@ -188,3 +208,140 @@ index 7ba966c..6b67060 100644
  
          # Pre-flight prefill memory guard — must precede any StreamingResponse
          # return so PrefillMemoryExceededError can be mapped to HTTP 400.
+diff --git a/tests/test_mtp_request_opt_out.py b/tests/test_mtp_request_opt_out.py
+new file mode 100644
+index 0000000..f3a6c82
+--- /dev/null
++++ b/tests/test_mtp_request_opt_out.py
+@@ -0,0 +1,131 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Per-request Lightning MTP opt-out (``X-oMLX-MTP: off``)."""
++
++from types import SimpleNamespace
++
++import mlx.core as mx
++import pytest
++from mlx_lm.models.llama import Model, ModelArgs
++
++from omlx.patches.mlx_lm_mtp import batch_generator as mtp
++from omlx.request import Request, SamplingParams
++from omlx.scheduler import Scheduler
++from omlx.server import _mtp_kwargs
++
++
++@pytest.fixture
++def scheduler_probe(monkeypatch):
++    mtp.apply()
++    model = Model(
++        ModelArgs(
++            model_type="llama",
++            hidden_size=32,
++            num_hidden_layers=2,
++            intermediate_size=64,
++            num_attention_heads=4,
++            rms_norm_eps=1e-5,
++            vocab_size=64,
++        )
++    )
++    # Same probe as test_mtp_xtc_sampling: real scheduler batches, no trained head.
++    model.mtp = object()
++    model.mtp_forward = lambda *args, **kwargs: None
++    model._omlx_mtp_decode_enabled = True
++    scheduler = Scheduler.__new__(Scheduler)
++    scheduler.model = model
++    scheduler.config = SimpleNamespace(completion_batch_size=8, prefill_step_size=32)
++    scheduler._xtc_special_tokens = []
++    scheduler._model_suppress_tokens = []
++    scheduler._get_stop_tokens = lambda: set()
++    scheduler._stream = mx.new_stream(mx.gpu)
++    scheduler.batch_generator = None
++    observed = []
++    original = mtp._is_mtp_eligible
++
++    def observe(batch):
++        observed.append((list(batch.uids), original(batch)))
++        return False
++
++    monkeypatch.setattr(mtp, "_is_mtp_eligible", observe)
++    monkeypatch.setattr(mtp, "_is_mtp_batch_eligible", lambda batch: False)
++    mtp.MTP_OPT_OUT_UIDS.clear()
++    try:
++        yield scheduler, observed
++    finally:
++        mtp.MTP_OPT_OUT_UIDS.clear()
++        if scheduler.batch_generator is not None:
++            scheduler.batch_generator.close()
++
++
++def insert(scheduler, max_tokens=8):
++    params = SamplingParams(temperature=0.0, max_tokens=max_tokens)
++    scheduler._ensure_batch_generator(params)
++    sampler, processors = scheduler._build_sampler_and_processors(params)
++    return scheduler.batch_generator.insert(
++        [[1, 2, 3]],
++        max_tokens=[max_tokens],
++        samplers=[sampler],
++        logits_processors=[processors],
++    )[0]
++
++
++def run_until_observed(scheduler, observed):
++    for _ in range(8):
++        scheduler.batch_generator.next()
++        if observed:
++            return observed[-1]
++    pytest.fail("MTP eligibility was never evaluated")
++
++
++@pytest.mark.parametrize("opted_out", [False, True])
++def test_opt_out_uid_disables_mtp_for_that_request(scheduler_probe, opted_out):
++    scheduler, observed = scheduler_probe
++    uid = insert(scheduler)
++    if opted_out:
++        mtp.set_request_mtp_opt_out(uid, True)
++    rows, eligible = run_until_observed(scheduler, observed)
++    assert rows == [uid]
++    assert eligible is (not opted_out)
++    if opted_out:
++        reason = mtp._ineligibility_reason(scheduler.batch_generator._generation_batch)
++        assert "X-oMLX-MTP" in reason
++
++
++def test_opt_out_of_another_uid_does_not_leak(scheduler_probe):
++    scheduler, observed = scheduler_probe
++    uid = insert(scheduler)
++    mtp.MTP_OPT_OUT_UIDS.add(uid + 1000)
++    _, eligible = run_until_observed(scheduler, observed)
++    assert eligible is True
++
++
++@pytest.mark.parametrize(
++    "value,expected",
++    [
++        ("off", True),
++        ("OFF", True),
++        (" 0 ", True),
++        ("false", True),
++        ("on", False),
++        ("", False),
++        (None, False),
++    ],
++)
++def test_mtp_header_parsing(value, expected):
++    headers = {} if value is None else {"X-oMLX-MTP": value}
++    req = SimpleNamespace(headers=headers)
++    assert _mtp_kwargs(req) == ({"mtp_opt_out": True} if expected else {})
++    assert _mtp_kwargs(None) == {}
++
++
++def test_reused_uid_resets_opt_out():
++    mtp.MTP_OPT_OUT_UIDS.clear()
++    mtp.set_request_mtp_opt_out(7, True)
++    assert 7 in mtp.MTP_OPT_OUT_UIDS
++    mtp.set_request_mtp_opt_out(7, False)
++    assert 7 not in mtp.MTP_OPT_OUT_UIDS
++
++
++def test_request_defaults_to_mtp_allowed():
++    req = Request(request_id="r", prompt="hi", sampling_params=SamplingParams())
++    assert req.mtp_opt_out is False

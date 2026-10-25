@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ConnectView: View {
@@ -54,29 +55,68 @@ private struct ConnectCard: View {
 struct LogView: View {
     @Environment(AppState.self) private var app
     @State private var source = 0
+    @State private var actions: [ActionLog.Entry] = []
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $source) {
-                Text("oMLX").tag(0)
-                Text("MCP").tag(1)
+            HStack {
+                Picker("", selection: $source) {
+                    Text("Aktionen").tag(2)
+                    Text("oMLX").tag(0)
+                    Text("MCP").tag(1)
+                }
+                .pickerStyle(.segmented).frame(width: 300)
+                Spacer()
+                if source == 2 {
+                    Button("Aktualisieren") { actions = ActionLog.recent() }
+                    Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([ActionLog.file]) }
+                }
             }
-            .pickerStyle(.segmented).frame(width: 220).padding(12)
-            let lines = source == 0 ? app.server.log : app.mcp.log
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 1) {
-                        ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
-                            Text(line).font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(line.contains("ERROR") ? .red : line.contains("WARNING") ? .orange : .primary)
-                                .textSelection(.enabled).id(i)
+            .padding(12)
+            if source == 2 {
+                if actions.isEmpty {
+                    ContentUnavailableView("Noch keine Aktionen", systemImage: "list.bullet.clipboard",
+                                           description: Text("Hier steht jeder Werkzeug-Aufruf des Agenten – mit Freigabe, YOLO oder aus Automationen."))
+                }
+                List(actions) { e in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: e.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(e.ok ? .green : .red)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(e.tool).font(.callout.monospaced().weight(.semibold))
+                                Chip(text: e.approval, tint: e.approval.contains("YOLO") || e.approval.contains("unbeaufsichtigt") ? .orange : .secondary)
+                                Text(e.context).font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Text(e.time.formatted(date: .abbreviated, time: .standard)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            }
+                            Text(e.arguments.replacingOccurrences(of: "\n", with: " ")).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(2)
+                            if !e.result.isEmpty {
+                                Text(e.result.replacingOccurrences(of: "\n", with: " ")).font(.caption).foregroundStyle(.tertiary).lineLimit(2)
+                            }
                         }
                     }
-                    .padding(.horizontal, 16).padding(.bottom, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 2)
                 }
-                .onChange(of: lines.count) { proxy.scrollTo(lines.count - 1) }
+                .listStyle(.inset)
+                .onAppear { actions = ActionLog.recent() }
+            } else {
+                let lines = source == 0 ? app.server.log : app.mcp.log
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 1) {
+                            ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                                Text(line).font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(line.contains("ERROR") ? .red : line.contains("WARNING") ? .orange : .primary)
+                                    .textSelection(.enabled).id(i)
+                            }
+                        }
+                        .padding(.horizontal, 16).padding(.bottom, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .onChange(of: lines.count) { proxy.scrollTo(lines.count - 1) }
+                }
             }
         }
+        .onAppear { if source == 0 && app.server.log.isEmpty { source = 2 } }
     }
 }
