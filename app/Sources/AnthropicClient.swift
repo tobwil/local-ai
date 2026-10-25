@@ -104,6 +104,7 @@ enum AnthropicClient {
                         throw LLMError.http(200, "Claude hat die Anfrage abgelehnt (refusal).")
                     }
                     // Bei abgeschnittener Antwort keine halben Tool-Aufrufe ausführen.
+                    if stopReason == "max_tokens" { continuation.yield(.truncated) }
                     if stopReason != "max_tokens" {
                         let calls = ordered.filter { $0["type"] as? String == "tool_use" }.map { b -> LLMClient.ToolCall in
                             let raw = b["_raw_input"] as? String ?? "{}"

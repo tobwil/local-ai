@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""strata-lite bench: misst lokale LLM-Geschwindigkeit auf Apple Silicon.
+"""KI/lokal bench: misst lokale LLM-Geschwindigkeit auf Apple Silicon.
 
 Zwei Backends:
   mlx   – lädt das Modell direkt mit mlx-lm (exakte Zahlen + Peak-Speicher)
   http  – jeder OpenAI-kompatible Server (oMLX, dflash serve, mlx_lm.server, LM Studio)
 
 Beispiele:
-  bench.py mlx  --model ~/.strata-lite/models/Qwen3.6-35B-A3B-UD-MLX-3bit
+  bench.py mlx  --model ~/.kilokal/models/Qwen3.6-35B-A3B-UD-MLX-3bit
   bench.py http --base-url http://127.0.0.1:8000/v1 --model Qwen3.6-35B-A3B-UD-MLX-3bit
   bench.py http ... --contexts 1k,4k,16k --workloads chat,code,context
   bench.py http ... --sustain 10          # 10 Minuten Dauerlast (Drosselung)

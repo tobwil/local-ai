@@ -4,6 +4,7 @@ import SwiftUI
 @main
 enum Main {
     static func main() {
+        DataMigration.run()
         if CommandLine.arguments.contains("--selftest") {
             SelfTest.run()
         }
@@ -11,6 +12,15 @@ enum Main {
             let dir = CommandLine.arguments.count > i + 1 ? CommandLine.arguments[i + 1] : NSTemporaryDirectory()
             _ = NSApplication.shared
             MainActor.assumeIsolated { Snapshot.run(to: URL(fileURLWithPath: dir)) }
+            exit(0)
+        }
+        if CommandLine.arguments.contains("--agent") {
+            setvbuf(stdout, nil, _IOLBF, 0)
+            Task { @MainActor in exit(await HeadlessAgent.run(arguments: CommandLine.arguments)) }
+            // RunLoop statt dispatchMain(): Antworten der laufenden App kommen als verteilte Mitteilungen
+            // über den RunLoop. Der Timer hält ihn am Laufen, solange noch kein Beobachter existiert.
+            Timer.scheduledTimer(withTimeInterval: 86_400, repeats: true) { _ in }
+            RunLoop.main.run()
             exit(0)
         }
         if CommandLine.arguments.contains("--install-engine") {

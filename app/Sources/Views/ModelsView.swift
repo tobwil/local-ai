@@ -78,6 +78,8 @@ private struct ModelRow: View {
                 }
                 .toggleStyle(.switch)
                 .onChange(of: longContext) { _, on in
+                    // Beim Anzeigen wird der gespeicherte Wert geladen – das ist keine Änderung und darf nichts neu starten.
+                    guard on != ModelSettingsStore.longContext(for: model.id) else { return }
                     try? ModelSettingsStore.setLongContext(on, for: model.id)
                     if app.server.state == .running { Task { await app.server.restart() } }
                 }
@@ -90,7 +92,10 @@ private struct ModelRow: View {
                         ForEach(Acceleration.allCases) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented).frame(maxWidth: 420)
-                    .onChange(of: acceleration) { _, new in Task { await app.setAcceleration(new, for: model) } }
+                    .onChange(of: acceleration) { _, new in
+                        guard new != ModelSettingsStore.acceleration(for: model.id) else { return }
+                        Task { await app.setAcceleration(new, for: model) }
+                    }
                     Spacer()
                 }
                 Text("Automatisch: MTP nur für Code-Aufgaben (~77 tok/s bei Edits), freier Text ohne Spekulation (~43 tok/s) – pro Anfrage, ohne Neustart. Braucht den oMLX-Patch aus engine/patches. Ein Wechsel des Modus startet den Server neu.")

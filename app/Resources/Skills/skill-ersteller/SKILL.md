@@ -5,7 +5,7 @@ description: Legt einen neuen Skill an oder verbessert einen bestehenden. Nutzen
 
 # Skill erstellen
 
-Ein Skill ist ein Ordner unter `~/.strata-lite/skills/<name>/` mit einer Datei `SKILL.md`:
+Ein Skill ist ein Ordner unter `~/.kilokal/skills/<name>/` mit einer Datei `SKILL.md`:
 
 ```markdown
 ---

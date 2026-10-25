@@ -1,7 +1,7 @@
 import Foundation
 
 struct ModelInfo: Identifiable, Hashable, Codable {
-    /// Ordnername unter ~/.strata-lite/models und zugleich die Modell-ID in oMLX.
+    /// Ordnername unter ~/.kilokal/models und zugleich die Modell-ID in oMLX.
     let id: String
     let repo: String
     let name: String

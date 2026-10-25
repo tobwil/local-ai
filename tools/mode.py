@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 SETTINGS = Path.home() / ".omlx" / "model_settings.json"
-MODELS = Path.home() / ".strata-lite" / "models"
+MODELS = Path.home() / ".kilokal" / "models"
 
 
 def main() -> None:

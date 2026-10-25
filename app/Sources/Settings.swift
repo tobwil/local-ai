@@ -80,25 +80,73 @@ final class AppSettings {
     }
 }
 
-/// Gespeicherte Gespräche unter ~/.strata-lite/chats.
+/// Gespeicherte Gespräche unter ~/.kilokal/chats.
+/// Gespräche als JSON-Dateien unter ~/.kilokal/chats. Ein Index im Speicher (nach Änderungsdatum)
+/// hält Liste und Volltextsuche schnell, ohne bei jedem Anzeigen alle Dateien neu zu lesen.
+@MainActor
 enum ChatStore {
-    static let dir = Paths.base.appendingPathComponent("chats")
+    /// Selbsttests setzen hier einen temporären Ordner, damit ihre Gespräche nicht im Verlauf landen.
+    static var dir = Paths.base.appendingPathComponent("chats")
 
     struct Entry: Identifiable {
         let id: String
         let title: String
         let date: Date
+        var mode: WorkMode = .work
+        var projectID: UUID?
+        /// Kleingeschriebener Text (Titel, Nachrichten, Antworten) für die Suche.
+        var searchText = ""
+        /// Fundstelle zur Suchanfrage (nur in Suchergebnissen).
+        var snippet: String?
     }
 
+    private static var cache: [String: (modified: Date, entry: Entry)] = [:]
+
     static func list() -> [Entry] {
-        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-        return files.filter { $0.pathExtension == "json" }.compactMap { url in
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        var seen = Set<String>()
+        var out: [Entry] = []
+        for url in files where url.pathExtension == "json" {
+            let id = url.deletingPathExtension().lastPathComponent
+            seen.insert(id)
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            if let hit = cache[id], hit.modified == modified { out.append(hit.entry); continue }
             guard let data = try? Data(contentsOf: url),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-            return Entry(id: url.deletingPathExtension().lastPathComponent, title: json["title"] as? String ?? "Gespräch",
-                         date: Date(timeIntervalSince1970: json["updated"] as? Double ?? 0))
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            let entry = makeEntry(id: id, json)
+            cache[id] = (modified, entry)
+            out.append(entry)
         }
-        .sorted { $0.date > $1.date }
+        for id in cache.keys where !seen.contains(id) { cache.removeValue(forKey: id) }
+        return out.sorted { $0.date > $1.date }
+    }
+
+    private static func makeEntry(id: String, _ json: [String: Any]) -> Entry {
+        let title = (json["customTitle"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? json["title"] as? String ?? "Gespräch"
+        var text = title
+        for item in json["items"] as? [[String: Any]] ?? [] where ["user", "assistant"].contains(item["k"] as? String ?? "") {
+            text += "\n" + (item["text"] as? String ?? "")
+            if text.count > 60_000 { break }
+        }
+        return Entry(id: id, title: title, date: Date(timeIntervalSince1970: json["updated"] as? Double ?? 0),
+                     mode: (json["mode"] as? String).flatMap(WorkMode.init(rawValue:)) ?? .work,
+                     projectID: (json["project"] as? String).flatMap(UUID.init(uuidString:)),
+                     searchText: text.lowercased())
+    }
+
+    /// Alle Wörter der Anfrage müssen vorkommen; Ergebnis mit Textausschnitt um den ersten Treffer.
+    static func search(_ query: String) -> [Entry] {
+        let terms = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !terms.isEmpty else { return list() }
+        return list().compactMap { e in
+            guard terms.allSatisfy({ e.searchText.contains($0) }), let r = e.searchText.range(of: terms[0]) else { return nil }
+            var hit = e
+            let start = e.searchText.index(r.lowerBound, offsetBy: -40, limitedBy: e.searchText.startIndex) ?? e.searchText.startIndex
+            let end = e.searchText.index(r.upperBound, offsetBy: 80, limitedBy: e.searchText.endIndex) ?? e.searchText.endIndex
+            hit.snippet = (start > e.searchText.startIndex ? "…" : "")
+                + e.searchText[start..<end].replacingOccurrences(of: "\n", with: " ") + (end < e.searchText.endIndex ? "…" : "")
+            return hit
+        }
     }
 
     static func save(id: String, _ json: [String: Any]) {
@@ -113,7 +161,16 @@ enum ChatStore {
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
+    /// Eigener Titel (leer = wieder automatisch aus der ersten Nachricht).
+    static func rename(id: String, to title: String) {
+        guard var json = load(id: id) else { return }
+        json["customTitle"] = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        save(id: id, json)
+    }
+
+    /// In den Papierkorb (wiederherstellbar).
     static func delete(id: String) {
         try? FileManager.default.trashItem(at: dir.appendingPathComponent("\(id).json"), resultingItemURL: nil)
+        cache.removeValue(forKey: id)
     }
 }

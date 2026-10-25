@@ -1,10 +1,10 @@
 #!/bin/zsh
-# strata-lite: startet einen lokalen, OpenAI-/Anthropic-kompatiblen Server auf :8000.
+# KI/lokal: startet einen lokalen, OpenAI-/Anthropic-kompatiblen Server auf :8000.
 #   ./serve.sh            oMLX (Multi-Modell, SSD-KV-Cache, Admin-UI unter /admin)
 #   ./serve.sh dflash M   dflash-mlx mit spekulativem Dekodieren für Modell M (Ordnername)
 set -euo pipefail
 
-BASE=~/.strata-lite
+BASE=~/.kilokal
 MODELS=$BASE/models
 mode=${1:-omlx}
 

@@ -138,6 +138,9 @@ final class VoiceController: NSObject {
     }
 
     private static func authorize() async -> Bool {
+        // Im Selbsttest aus dem Terminal würde macOS die Anfrage dem Terminal zuordnen (ohne Begründungstext) und
+        // den Prozess beenden – dort also nie nach Mikrofon/Spracherkennung fragen.
+        if CommandLine.arguments.contains("--selftest") { return false }
         let speech = await withCheckedContinuation { c in
             SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
         }

@@ -55,6 +55,15 @@ struct SettingsView: View {
                     settings.lanEnabled = on
                     if app.server.state == .running { Task { await app.server.restart() } }
                 }))
+                if settings.lanEnabled && app.server.state == .external {
+                    HStack {
+                        Label("Die Engine wurde außerhalb der App gestartet und ist nur auf diesem Mac erreichbar.",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout).foregroundStyle(.orange)
+                        Spacer()
+                        Button("In der App neu starten") { Task { await app.server.takeOver() } }
+                    }
+                }
                 if settings.lanEnabled {
                     HStack(alignment: .top, spacing: 16) {
                         if let qr = HomeNetwork.qrCode(HomeNetwork.webChatURL) {

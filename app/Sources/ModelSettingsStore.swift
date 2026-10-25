@@ -60,7 +60,7 @@ enum ModelSettingsStore {
 
     /// Speicherwächter von oMLX so einstellen, dass er erst knapp vor dem Metal-Limit eingreift
     /// (Standard 0,85/0,95 bricht lange Kontexte unnötig früh ab).
-    static func tuneServerSettings() {
+    static func tuneServerSettings(lan: Bool = false) {
         let url = Paths.home.appendingPathComponent(".omlx/settings.json")
         guard let data = try? Data(contentsOf: url),
               var root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
@@ -68,6 +68,10 @@ enum ModelSettingsStore {
         memory["soft_threshold"] = 0.94
         memory["hard_threshold"] = 0.99
         root["memory"] = memory
+        // Lokal (nur 127.0.0.1) dürfen Programme ohne Schlüssel chatten; im Heimnetz nur mit Schlüssel.
+        var auth = root["auth"] as? [String: Any] ?? [:]
+        auth["allow_unauthenticated_inference"] = !lan
+        root["auth"] = auth
         if let out = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys]) {
             try? out.write(to: url, options: .atomic)
         }

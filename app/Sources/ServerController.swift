@@ -41,7 +41,7 @@ final class ServerController {
             return
         }
         try? FileManager.default.createDirectory(at: Paths.models, withIntermediateDirectories: true)
-        ModelSettingsStore.tuneServerSettings()
+        ModelSettingsStore.tuneServerSettings(lan: HomeNetwork.enabled)
 
         let p = Process()
         p.executableURL = Paths.omlx
@@ -56,7 +56,8 @@ final class ServerController {
         if let key = HomeNetwork.key {
             p.arguments! += ["--host", "0.0.0.0", "--api-key", key]   // Heimnetz, nur mit Schlüssel
         } else {
-            p.arguments! += ["--host", "127.0.0.1"]
+            // Nur lokal: Schlüssel schützt Verwaltung/Statistik, Chatten geht ohne (allow_unauthenticated_inference)
+            p.arguments! += ["--host", "127.0.0.1", "--api-key", HomeNetwork.localKey]
         }
         var env = ProcessInfo.processInfo.environment
         env["PYTHONUNBUFFERED"] = "1"
@@ -109,6 +110,27 @@ final class ServerController {
             stop()
             while p.isRunning { try? await Task.sleep(for: .milliseconds(200)) }
         }
+        start()
+    }
+
+    /// Eine außerhalb gestartete Engine (z. B. tools/serve.sh) beenden und selbst neu starten –
+    /// nötig, damit Einstellungen wie die Heimnetz-Freigabe (--host 0.0.0.0) greifen.
+    func takeOver() async {
+        guard process == nil, state == .external else { return }
+        appendLog("■ Extern gestartete Engine wird übernommen …\n")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        p.arguments = ["-t", "-iTCP:\(Paths.port)", "-sTCP:LISTEN"]
+        let out = Pipe()
+        p.standardOutput = out
+        let pids = ((try? await p.runAndRead(out))?.0).flatMap { String(data: $0, encoding: .utf8) }?
+            .split(whereSeparator: \.isNewline).compactMap { Int32($0) } ?? []
+        for pid in pids { kill(pid, SIGTERM) }
+        for _ in 0..<60 {
+            if await fetchModels() == nil { break }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        state = .stopped
         start()
     }
 

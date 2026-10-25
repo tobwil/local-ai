@@ -15,6 +15,8 @@ enum LLMClient {
         case usage(prompt: Int, completion: Int)
         /// Original-Inhaltsblöcke der Antwort (nur Anthropic), um sie unverändert zurückzuschicken.
         case raw([[String: Any]])
+        /// Antwort am Längenlimit (max_tokens) abgeschnitten – halbe Werkzeug-Aufrufe wurden verworfen.
+        case truncated
     }
 
     /// Streamt eine Antwort. `messages` und `tools` sind bereits im OpenAI-JSON-Format.
@@ -66,6 +68,7 @@ enum LLMClient {
                     }
 
                     var calls: [Int: ToolCall] = [:]
+                    var truncated = false
                     for try await line in bytes.lines {
                         guard line.hasPrefix("data:") else { continue }
                         let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
@@ -77,6 +80,7 @@ enum LLMClient {
                             continuation.yield(.usage(prompt: u["prompt_tokens"] as? Int ?? 0, completion: c))
                         }
                         for choice in ev["choices"] as? [[String: Any]] ?? [] {
+                            if choice["finish_reason"] as? String == "length" { truncated = true }
                             guard let delta = choice["delta"] as? [String: Any] else { continue }
                             if let r = (delta["reasoning_content"] ?? delta["reasoning"]) as? String, !r.isEmpty {
                                 continuation.yield(.reasoning(r))
@@ -97,7 +101,9 @@ enum LLMClient {
                             }
                         }
                     }
-                    if !calls.isEmpty {
+                    if truncated {
+                        continuation.yield(.truncated)
+                    } else if !calls.isEmpty {
                         let ordered = calls.keys.sorted().compactMap { calls[$0] }.map { c -> ToolCall in
                             var c = c
                             if c.id.isEmpty { c.id = "call_\(UUID().uuidString.prefix(8))" }

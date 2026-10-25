@@ -101,6 +101,8 @@ enum CrashReports {
     static func parse(_ url: URL, date: Date) -> Report? {
         guard let raw = try? String(contentsOf: url, encoding: .utf8), let nl = raw.firstIndex(of: "\n"),
               let body = try? JSONSerialization.jsonObject(with: Data(raw[raw.index(after: nl)...].utf8)) as? [String: Any] else { return nil }
+        // Nur Abstürze der normal gestarteten App melden – nicht von Läufen aus dem Terminal (Selbsttest, --agent).
+        if let parent = body["parentProc"] as? String, parent != "launchd" { return nil }
         let exc = body["exception"] as? [String: Any]
         let exception = [exc?["type"] as? String, exc?["signal"] as? String].compactMap { $0 }.joined(separator: " / ")
         let images = body["usedImages"] as? [[String: Any]] ?? []

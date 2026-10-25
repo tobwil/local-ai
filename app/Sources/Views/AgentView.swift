@@ -4,15 +4,94 @@ import UniformTypeIdentifiers
 
 struct AgentView: View {
     @Environment(AppState.self) private var app
+    @AppStorage("previewFraction") private var previewFraction = 0.45
+    @AppStorage("chatListOpen") private var chatListOpen = true
+    @AppStorage("chatListWidth") private var chatListWidth = 260.0
+    @State private var dragStartWidth: Double?
+    @State private var skillSheet = false
 
     var body: some View {
+        HStack(spacing: 0) {
+            if chatListOpen {
+                ChatList().frame(width: chatListWidth)
+                // Breite per Ziehen ändern (wird gemerkt)
+                Rectangle().fill(.separator).frame(width: 1)
+                    .overlay { Color.clear.frame(width: 9).contentShape(Rectangle()).onHover { inside in
+                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    } }
+                    .gesture(DragGesture(minimumDistance: 1).onChanged { v in
+                        let start = dragStartWidth ?? chatListWidth
+                        dragStartWidth = start
+                        chatListWidth = min(max(start + v.translation.width, 200), 480)
+                    }.onEnded { _ in dragStartWidth = nil })
+            }
+            chatAndPreview
+        }
+        .sheet(isPresented: $skillSheet) { SkillFromChatSheet(chatID: app.session.chatID, chatTitle: app.session.title) }
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button { withAnimation { chatListOpen.toggle() } } label: {
+                    Label("Gespräche", systemImage: "list.bullet.rectangle")
+                }
+                .help("Gesprächsliste mit Suche ein-/ausblenden")
+            }
+            ToolbarItem(placement: .principal) { ProjectPicker() }
+            ToolbarItem {
+                let preview = app.session.preview
+                Button { withAnimation { preview.isOpen.toggle() } } label: {
+                    Label("Vorschau", systemImage: preview.isOpen ? "sidebar.right" : "rectangle.righthalf.inset.filled")
+                }
+                .help(preview.files.isEmpty ? "Vorschau (Seiten, Spiele, Bilder, Dokumente des Agenten)" : "Vorschau – \(preview.files.count) Datei(en)")
+            }
+            ToolbarItem {
+                Button { app.session.newChat() } label: { Label("Neues Gespräch", systemImage: "square.and.pencil") }
+                    .help("Neues Gespräch\(app.session.project.map { " in „\($0.name)“" } ?? "")")
+            }
+        }
+    }
+
+    private var chatAndPreview: some View {
+        GeometryReader { geo in
+            // Chat links, Vorschau rechts; die Trennlinie lässt sich ziehen (Anteil wird gemerkt).
+            let previewWidth = min(max(geo.size.width * previewFraction, 320), max(geo.size.width - 420, 320))
+            HStack(spacing: 0) {
+                chat.frame(maxWidth: .infinity)
+                if app.session.preview.isOpen {
+                    Rectangle().fill(.separator).frame(width: 1)
+                        .overlay { Color.clear.frame(width: 9).contentShape(Rectangle()).onHover { inside in
+                            if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                        } }
+                        .gesture(DragGesture(coordinateSpace: .named("agent")).onChanged { v in
+                            previewFraction = min(max(1 - v.location.x / geo.size.width, 0.25), 0.7)
+                        })
+                    PreviewPane().frame(width: previewWidth)
+                }
+            }
+            .coordinateSpace(name: "agent")
+        }
+    }
+
+    private var chat: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
                         if app.session.items.isEmpty { EmptyAgent() }
-                        ForEach(app.session.items) { item in
-                            ItemView(item: item).id(item.id)
+                        // Arbeitsschritte je Auftrag kompakt zusammengefasst, die Antwort groß darunter
+                        ForEach(ChatSegment.build(app.session.items)) { segment in
+                            switch segment {
+                            case let .item(item): ItemView(item: item).id(item.id)
+                            case let .steps(items): StepsGroup(items: items).id(items[0].id)
+                            }
+                        }
+                        // Nach einem gelungenen Ablauf mit mehreren Schritten: als wiederverwendbaren Skill anbieten.
+                        if !app.session.isRunning, app.session.successfulToolCalls >= 3,
+                           case .assistant(let text, _, _)? = app.session.items.last?.kind, !text.isEmpty {
+                            Button { skillSheet = true } label: {
+                                Label("Diesen Ablauf als Skill speichern – beim nächsten Mal weiß der Agent, wie es geht", systemImage: "lightbulb")
+                                    .font(.callout)
+                            }
+                            .buttonStyle(.borderless).foregroundStyle(Theme.gold)
                         }
                         Color.clear.frame(height: 1).id("bottom")
                     }
@@ -25,14 +104,6 @@ struct AgentView: View {
             }
             Composer()
         }
-        .toolbar {
-            ToolbarItem {
-                HistoryMenu()
-            }
-            ToolbarItem {
-                Button { app.session.reset() } label: { Label("Neues Gespräch", systemImage: "square.and.pencil") }
-            }
-        }
     }
 
     private var lastText: Int {
@@ -43,23 +114,32 @@ struct AgentView: View {
 
 private struct EmptyAgent: View {
     @Environment(AppState.self) private var app
-    private let ideas = [
-        ("folder", "Was liegt in meinem Arbeitsordner? Fasse die wichtigsten Dateien zusammen."),
-        ("chevron.left.forwardslash.chevron.right", "Schreibe ein Python-Skript, das alle Fotos in einem Ordner nach Datum sortiert, und speichere es als sort_photos.py."),
-        ("globe", "Recherchiere die wichtigsten KI-Neuigkeiten dieser Woche und fasse sie mit Quellen zusammen."),
-        ("terminal", "Wie viel Speicherplatz ist auf meinem Mac frei? Prüfe es mit einem Shell-Befehl."),
-    ]
+
+    /// „Guten Morgen, Tobias.“ – Vorname aus dem macOS-Benutzerkonto.
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let part = hour < 5 ? "Gute Nacht" : hour < 11 ? "Guten Morgen" : hour < 17 ? "Hallo" : hour < 22 ? "Guten Abend" : "Gute Nacht"
+        let first = NSFullUserName().split(separator: " ").first.map(String.init) ?? ""
+        return first.isEmpty ? "\(part)." : "\(part), \(first)."
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading) {
-                    HStack(spacing: 8) { Wordmark(suffix: "agent", size: 28) }
-                    Text("\(app.agentTools.count) Werkzeuge · \(app.plugins.skills.count) Skills · \(app.plugins.commands.count) Befehle – das Modell läuft auf diesem Mac").foregroundStyle(.secondary)
-                }
+        let mode = app.session.mode
+        let project = app.session.project
+        let ideas = mode.ideas
+        let quick = ["transkribieren", "zusammenfassen", "mail-antwort", "recherche", "excel-auswerten"]
+            .compactMap { id in app.assistants.all.first { $0.id == id } }
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 6) {
+                Wordmark(suffix: project.map { $0.name.lowercased() } ?? "agent", size: 22)
+                Text(project == nil ? greeting : "Projekt „\(project!.name)“")
+                    .font(.system(size: 34, weight: .semibold, design: .rounded))
+                Text(project == nil ? "Was steht an? Fragen, recherchieren, Dateien, Kalender, Browser und Code – alles auf diesem Mac."
+                                    : mode == .code ? "Code-Projekt: \(mode.tagline)." : "Gespräche, Ordner und Anweisungen dieses Projekts an einem Ort.")
+                    .font(.title3).foregroundStyle(.secondary)
             }
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                ForEach(ideas, id: \.1) { icon, text in
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                ForEach(ideas, id: \.text) { icon, text in
                     Button { app.session.input = text } label: {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: icon).foregroundStyle(Theme.primary).frame(width: 18)
@@ -74,8 +154,28 @@ private struct EmptyAgent: View {
                     .buttonStyle(.plain)
                 }
             }
+            if !quick.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Assistenten").font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                    FlowLayout(spacing: 8) {
+                        ForEach(quick) { a in
+                            Button { AssistantRunner.start(a, app: app) } label: {
+                                Label(a.name, systemImage: a.icon).lineLimit(1).fixedSize()
+                                    .padding(.horizontal, 12).padding(.vertical, 7)
+                                    .background(Theme.gold.opacity(0.14), in: Capsule())
+                                    .overlay(Capsule().strokeBorder(Theme.gold.opacity(0.35)))
+                            }
+                            .buttonStyle(.plain)
+                            .help(a.summary)
+                        }
+                        Button("Alle …") { app.requestedScreen = .assistants }.buttonStyle(.borderless)
+                    }
+                }
+            }
+            Text("\(app.modeTools.count) Werkzeuge · \(app.plugins.skills.count) Skills · \(app.selectedModelName) – läuft auf diesem Mac")
+                .font(.caption).foregroundStyle(.tertiary)
         }
-        .padding(.top, 30)
+        .padding(.top, 36)
     }
 }
 
@@ -117,9 +217,10 @@ private struct ItemView: View {
                         Label("Gedanken", systemImage: "brain").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                if text.isEmpty && thinking.isEmpty {
-                    TypingDots()
-                } else if !text.isEmpty {
+                if text.isEmpty && stats == nil && app.session.isRunning && item.id == app.session.items.last?.id {
+                    TypingDots(thinking: !thinking.isEmpty)
+                }
+                if !text.isEmpty {
                     RichText(text: text)
                 }
                 if let stats {
@@ -135,6 +236,22 @@ private struct ItemView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         case let .tool(name, source, arguments, state, result):
             ToolCard(id: item.id, name: name, source: source, arguments: arguments, state: state, result: result)
+        case let .error(message) where message.hasPrefix(AgentSession.stepLimitPrefix):
+            HStack(spacing: 10) {
+                Label(message, systemImage: "pause.circle.fill").foregroundStyle(.orange).font(.callout)
+                if !app.session.isRunning && item.id == app.session.items.last?.id {
+                    Button("Weitermachen") {
+                        app.session.input = "Mach weiter, wo du aufgehört hast."
+                        app.send()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(10).background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        case let .error(message) where message.hasPrefix(AgentSession.qualityPrefix):
+            Label(message, systemImage: "checkmark.seal")
+                .font(.callout).foregroundStyle(Theme.primary)
+                .padding(10).background(Theme.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
         case let .error(message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red).font(.callout)
@@ -160,21 +277,20 @@ private struct ToolCard: View {
                     Text(source).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
+                if state == .done, let url = PreviewStore.writtenPath(tool: name, arguments: arguments, workspace: app.session.workspace) {
+                    Button { app.session.preview.show(url) } label: { Label("Vorschau", systemImage: "eye") }
+                        .buttonStyle(.borderless).font(.caption)
+                        .help(url.path)
+                }
                 Button { withAnimation { expanded.toggle() } } label: {
                     Image(systemName: "chevron.right").rotationEffect(.degrees(expanded || state == .awaitingApproval ? 90 : 0))
                 }
                 .buttonStyle(.borderless)
             }
-            if expanded || state == .awaitingApproval {
-                CodeBlock(code: arguments, language: "Argumente")
-            }
             if state == .awaitingApproval {
-                HStack {
-                    Text("Darf der Agent das ausführen?").font(.callout.weight(.medium))
-                    Spacer()
-                    Button("Ablehnen") { app.session.approve(id, false) }
-                    Button("Erlauben") { app.session.approve(id, true) }.buttonStyle(.borderedProminent).keyboardShortcut(.return)
-                }
+                approval
+            } else if expanded {
+                CodeBlock(code: arguments, language: "Argumente")
             }
             if expanded && !result.isEmpty {
                 CodeBlock(code: String(result.prefix(6000)), language: "Ergebnis")
@@ -185,6 +301,42 @@ private struct ToolCard: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .strokeBorder(state == .awaitingApproval ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.separator.opacity(0.6)),
                           lineWidth: state == .awaitingApproval ? 2 : 1))
+    }
+
+    /// Freigabe in Klartext: was, das Wichtigste daraus, warum gefragt wird – und die Wahl.
+    @ViewBuilder private var approval: some View {
+        let info = ToolExplain.explain(name: name, source: source, arguments: arguments)
+        let parsed = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: Any]) ?? [:]
+        let danger = AgentSession.dangerReason(tool: name, args: parsed)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(info.summary).font(.callout.weight(.semibold))
+            if let detail = info.detail, !detail.isEmpty { CodeBlock(code: detail, language: info.detailLabel) }
+            VStack(alignment: .leading, spacing: 4) {
+                Label(info.risk, systemImage: "info.circle").foregroundStyle(.secondary)
+                if let danger {
+                    Label("Notbremse: \(danger) – deshalb fragt KI/lokal auch im YOLO-Modus.", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                } else {
+                    Label("Du wirst gefragt, weil der YOLO-Modus aus ist. Ordner: \(app.session.workspace.path)", systemImage: "hand.raised")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
+            HStack {
+                Button("Alle Details") { withAnimation { expanded.toggle() } }.buttonStyle(.borderless).font(.caption)
+                Spacer()
+                Button("Ablehnen") { app.session.approve(id, false) }
+                if danger == nil {
+                    Button("Für dieses Gespräch alles erlauben") {
+                        app.session.autoApprove = true
+                        app.session.approve(id, true)
+                    }
+                    .help("Schaltet YOLO ein: Der Agent fragt nicht mehr nach (die Notbremse bleibt aktiv).")
+                }
+                Button("Erlauben") { app.session.approve(id, true) }.buttonStyle(.borderedProminent).keyboardShortcut(.return)
+            }
+            if expanded { CodeBlock(code: arguments, language: "Argumente (vollständig)") }
+        }
     }
 
     @ViewBuilder private var icon: some View {
@@ -206,23 +358,8 @@ private struct Composer: View {
     var body: some View {
         @Bindable var session = app.session
         VStack(spacing: 8) {
-            HStack(spacing: 12) {
-                Toggle(isOn: $session.agentMode) { Label("Agent", systemImage: "wrench.and.screwdriver") }
-                    .toggleStyle(.button)
-                Toggle(isOn: $session.thinking) { Label("Denken", systemImage: "brain") }
-                    .toggleStyle(.button)
-                Button { pickWorkspace() } label: {
-                    Label(session.workspace.lastPathComponent.isEmpty ? "/" : session.workspace.lastPathComponent, systemImage: "folder")
-                }
-                .help("Arbeitsordner: \(session.workspace.path)")
-                if session.agentMode {
-                    Toggle(isOn: $session.autoApprove) { Label("YOLO", systemImage: session.autoApprove ? "flame.fill" : "flame") }
-                        .toggleStyle(.button)
-                        .tint(session.autoApprove ? .orange : nil)
-                        .help(session.autoApprove
-                              ? "YOLO an: Werkzeuge laufen ohne Nachfrage\(session.dangerGuard ? " (außer zerstörerische Befehle)" : " – auch zerstörerische!")"
-                              : "YOLO-Modus: Agent fragt nicht mehr vor Schreiben, Shell, Browser-Aktionen und MCP-Aufrufen")
-                }
+            // Statuszeile: Tempo, Cloud-Hinweis, Modell
+            HStack(spacing: 10) {
                 Spacer()
                 if session.isRunning && session.liveTokPerSec > 0 {
                     Label("\(session.liveTokPerSec.oneDecimal) tok/s", systemImage: "bolt.fill")
@@ -232,9 +369,8 @@ private struct Composer: View {
                 if app.selectedIsCloud {
                     Chip(text: "Cloud – Daten verlassen den Mac", systemImage: "cloud", tint: .orange)
                 }
-                Text(app.selectedModelName).font(.caption).foregroundStyle(.secondary)
+                Text(app.selectedModelName).font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
             }
-            .controlSize(.small)
 
             if app.talkMode { TalkBar() }
             if let captureError { Label(captureError, systemImage: "camera.metering.unknown").font(.caption).foregroundStyle(.orange) }
@@ -243,6 +379,23 @@ private struct Composer: View {
                 Label(e, systemImage: "mic.slash").font(.caption).foregroundStyle(.orange)
             }
 
+            if !session.documents.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(session.documents, id: \.self) { url in
+                            HStack(spacing: 5) {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 16, height: 16)
+                                Text(url.lastPathComponent).font(.caption).lineLimit(1)
+                                Button { session.documents.removeAll { $0 == url } } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+                                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(.quaternary.opacity(0.6), in: Capsule())
+                            .help(url.path)
+                        }
+                    }
+                }
+            }
             if !session.attachments.isEmpty {
                 HStack(spacing: 8) {
                     ForEach(Array(session.attachments.enumerated()), id: \.offset) { i, data in
@@ -290,68 +443,78 @@ private struct Composer: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator))
             }
 
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField(app.canSend ? "Frag etwas oder gib dem Agenten eine Aufgabe …" : "Server starten, um loszulegen",
+            // Eingabe wie bei Claude/ChatGPT: Textfeld über die volle Breite, darunter Schalter und Knöpfe.
+            VStack(alignment: .leading, spacing: 8) {
+                TextField(app.canSendOrStart ? "Frag etwas oder gib dem Agenten eine Aufgabe …" : "Erst die Engine einrichten (Übersicht)",
                           text: $session.input, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .focused($focused)
                     .onSubmit { app.send() }
-                    .padding(12)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(focused ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.separator), lineWidth: focused ? 1.5 : 1))
-                Button { app.voice.toggleListening(currentText: session.input) } label: {
-                    Image(systemName: app.voice.isListening ? "mic.fill" : "mic").font(.system(size: 20))
-                        .symbolEffect(.pulse, isActive: app.voice.isListening)
-                }
-                .buttonStyle(.plain).foregroundStyle(app.voice.isListening ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                .help("Diktieren (auf dem Mac erkannt)")
-                Button {
-                    if app.voice.isSpeaking { app.voice.stopSpeaking() } else { app.settings.readAloud.toggle() }
-                } label: {
-                    Image(systemName: app.voice.isSpeaking ? "speaker.wave.3.fill" : (app.settings.readAloud ? "speaker.wave.2" : "speaker.slash"))
-                        .font(.system(size: 18))
-                }
-                .buttonStyle(.plain).foregroundStyle(app.settings.readAloud ? AnyShapeStyle(Theme.primary) : AnyShapeStyle(.secondary))
-                .help(app.voice.isSpeaking ? "Vorlesen stoppen" : "Antworten vorlesen an/aus")
-                Menu {
-                    ForEach(ScreenCapture.Mode.allCases) { mode in
-                        Button { capture(mode) } label: { Label(mode.label, systemImage: mode.icon) }
+                    .padding(.horizontal, 4).padding(.top, 4)
+                HStack(spacing: 10) {
+                    ViewThatFits(in: .horizontal) {
+                        toggles(compact: false)
+                        toggles(compact: true)
                     }
-                } label: {
-                    Image(systemName: "camera.viewfinder").font(.system(size: 19))
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .foregroundStyle(.secondary)
-                .help("Bildschirmfoto anhängen")
-                Button { app.toggleTalkMode() } label: {
-                    Image(systemName: app.talkMode ? "waveform.circle.fill" : "waveform.circle").font(.system(size: 22))
-                        .symbolEffect(.variableColor.iterative, isActive: app.talkPhase == .speaking)
-                }
-                .buttonStyle(.plain).foregroundStyle(app.talkMode ? AnyShapeStyle(Theme.gold) : AnyShapeStyle(.secondary))
-                .help("Gesprächsmodus: sprechen, Pause → abschicken, Antwort hören, weiter sprechen")
-                Button { pickImages() } label: { Image(systemName: "photo.badge.plus").font(.system(size: 20)) }
-                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Bild anhängen (auch per Drag & Drop)")
-                if session.isRunning {
-                    Button { session.stop() } label: { Image(systemName: "stop.circle.fill").font(.system(size: 30)) }
-                        .buttonStyle(.plain).foregroundStyle(.red)
-                } else {
-                    Button { app.send() } label: { Image(systemName: "arrow.up.circle.fill").font(.system(size: 30)) }
-                        .buttonStyle(.plain).foregroundStyle(Theme.brand)
-                        .disabled(!app.canSend
-                                  || (session.input.trimmingCharacters(in: .whitespaces).isEmpty && session.attachments.isEmpty))
+                    .controlSize(.small)
+                    Spacer(minLength: 6)
+                    Button { app.voice.toggleListening(currentText: session.input) } label: {
+                        Image(systemName: app.voice.isListening ? "mic.fill" : "mic").font(.system(size: 20))
+                            .symbolEffect(.pulse, isActive: app.voice.isListening)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(app.voice.isListening ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                    .help("Diktieren (auf dem Mac erkannt)")
+                    Button {
+                        if app.voice.isSpeaking { app.voice.stopSpeaking() } else { app.settings.readAloud.toggle() }
+                    } label: {
+                        Image(systemName: app.voice.isSpeaking ? "speaker.wave.3.fill" : (app.settings.readAloud ? "speaker.wave.2" : "speaker.slash"))
+                            .font(.system(size: 18))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(app.settings.readAloud ? AnyShapeStyle(Theme.primary) : AnyShapeStyle(.secondary))
+                    .help(app.voice.isSpeaking ? "Vorlesen stoppen" : "Antworten vorlesen an/aus")
+                    Menu {
+                        ForEach(ScreenCapture.Mode.allCases) { mode in
+                            Button { capture(mode) } label: { Label(mode.label, systemImage: mode.icon) }
+                        }
+                    } label: {
+                        Image(systemName: "camera.viewfinder").font(.system(size: 19))
+                    }
+                    // .borderlessButton zeichnet das Symbol als AppKit-Menüknopf (kleiner, ignoriert .font);
+                    // .button + .plain rendert es wie die übrigen Knöpfe der Leiste.
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                    .foregroundStyle(.secondary)
+                    .help("Bildschirmfoto anhängen")
+                    Button { app.toggleTalkMode() } label: {
+                        Image(systemName: app.talkMode ? "waveform.circle.fill" : "waveform.circle").font(.system(size: 22))
+                            .symbolEffect(.variableColor.iterative, isActive: app.talkPhase == .speaking)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(app.talkMode ? AnyShapeStyle(Theme.gold) : AnyShapeStyle(.secondary))
+                    .help("Gesprächsmodus: sprechen, Pause → abschicken, Antwort hören, weiter sprechen")
+                    Button { pickImages() } label: { Image(systemName: "paperclip").font(.system(size: 19)) }
+                        .buttonStyle(.plain).foregroundStyle(.secondary).help("Dateien anhängen: Bilder, PDF, Word, Excel, PowerPoint, Text, ZIP … (auch per Drag & Drop)")
+                    if session.isRunning {
+                        Button { session.stop() } label: { Image(systemName: "stop.circle.fill").font(.system(size: 30)) }
+                            .buttonStyle(.plain).foregroundStyle(.red)
+                    } else {
+                        Button { app.send() } label: { Image(systemName: "arrow.up.circle.fill").font(.system(size: 30)) }
+                            .buttonStyle(.plain).foregroundStyle(Theme.brand)
+                            .disabled(!app.canSendOrStart
+                                      || (session.input.trimmingCharacters(in: .whitespaces).isEmpty && session.attachments.isEmpty && session.documents.isEmpty))
+                    }
                 }
             }
+            .padding(12)
+            .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(focused ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.separator), lineWidth: focused ? 1.5 : 1))
+            .contentShape(Rectangle())
+            .onTapGesture { focused = true }
         }
         .padding(16)
         .background(.bar)
         .onAppear { focused = true }
-        .dropDestination(for: URL.self) { urls, _ in
-            let images = urls.compactMap { ImageAttachment.jpeg(from: $0) }
-            app.session.attachments += images
-            return !images.isEmpty
-        }
+        .dropDestination(for: URL.self) { urls, _ in attach(urls) }
     }
 
     private var suggestions: [SlashCommand] {
@@ -373,11 +536,51 @@ private struct Composer: View {
 
     private func pickImages() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = true
-        if panel.runModal() == .OK {
-            app.session.attachments += panel.urls.compactMap { ImageAttachment.jpeg(from: $0) }
+        panel.canChooseDirectories = false
+        panel.message = "Bilder, PDF, Word, Excel, PowerPoint, Text, ZIP – oder jede andere Datei"
+        if panel.runModal() == .OK { attach(panel.urls) }
+    }
+
+    /// Bilder gehen als Bild an das (Vision-)Modell, alles andere als Datei mit ausgelesenem Inhalt.
+    @discardableResult private func attach(_ urls: [URL]) -> Bool {
+        for url in urls {
+            if let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image),
+               let jpeg = ImageAttachment.jpeg(from: url) {
+                app.session.attachments.append(jpeg)
+            } else if !app.session.documents.contains(url) {
+                app.session.documents.append(url)
+            }
         }
+        return !urls.isEmpty
+    }
+
+    /// Denken, Ordner, YOLO – bei wenig Platz nur als Symbole.
+    @ViewBuilder private func toggles(compact: Bool) -> some View {
+        @Bindable var session = app.session
+        HStack(spacing: 8) {
+            Toggle(isOn: $session.thinking) { label("Denken", "brain", compact) }
+                .toggleStyle(.button)
+                .help("Denken: das Modell überlegt erst und antwortet dann (langsamer, gründlicher)")
+            if session.mode.hasWorkspace {
+                Button { pickWorkspace() } label: {
+                    label(session.workspace.lastPathComponent.isEmpty ? "/" : session.workspace.lastPathComponent,
+                          session.mode == .code ? "folder.badge.gearshape" : "folder", compact)
+                }
+                .help("\(session.project == nil ? "Arbeitsordner" : "Projektordner"): \(session.workspace.path)")
+                Toggle(isOn: $session.autoApprove) { label("YOLO", session.autoApprove ? "flame.fill" : "flame", compact) }
+                    .toggleStyle(.button)
+                    .tint(session.autoApprove ? .orange : nil)
+                    .help(session.autoApprove
+                          ? "YOLO an: Werkzeuge laufen ohne Nachfrage\(session.dangerGuard ? " (außer zerstörerische Befehle)" : " – auch zerstörerische!")"
+                          : "YOLO-Modus: Agent fragt nicht mehr vor Schreiben, Shell, Browser-Aktionen und MCP-Aufrufen")
+            }
+        }
+        .fixedSize()
+    }
+
+    private func label(_ title: String, _ icon: String, _ compact: Bool) -> some View {
+        Label(title, systemImage: icon).labelStyle(CompactLabelStyle(compact: compact))
     }
 
     private func pickWorkspace() {
@@ -390,17 +593,36 @@ private struct Composer: View {
     }
 }
 
+/// Lebenszeichen, solange noch kein Text da ist: animierte Punkte, was gerade passiert und seit wann.
 private struct TypingDots: View {
-    @State private var phase = 0.0
+    @Environment(AppState.self) private var app
+    var thinking = false
+
     var body: some View {
-        HStack(spacing: 5) {
-            ForEach(0..<3) { i in
-                Circle().fill(Theme.brand).frame(width: 7, height: 7)
-                    .opacity(0.3 + 0.7 * abs(sin(phase + Double(i) * 0.8)))
+        TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            let elapsed = app.session.stepStarted.map { context.date.timeIntervalSince($0) } ?? 0
+            HStack(spacing: 10) {
+                HStack(spacing: 5) {
+                    ForEach(0..<3) { i in
+                        let wave = (sin(t * 5 - Double(i) * 0.9) + 1) / 2
+                        Circle().fill(Theme.brand).frame(width: 7, height: 7)
+                            .opacity(0.3 + 0.7 * wave)
+                            .offset(y: -3 * wave)
+                    }
+                }
+                Text(status(elapsed)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }
+            .padding(.vertical, 6)
         }
-        .onAppear { withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { phase = .pi } }
-        .padding(.vertical, 6)
+    }
+
+    private func status(_ s: Double) -> String {
+        let secs = s < 1 ? "" : " · \(Int(s)) s"
+        if thinking { return "denkt nach\(secs)" }
+        if s < 2 { return "" }
+        // Vor dem ersten Token verarbeitet das Modell die Eingabe (Prompt, Werkzeuge, Verlauf).
+        return s < 25 ? "liest Eingabe\(secs)" : "liest Eingabe\(secs) – beim ersten Mal lädt das Modell"
     }
 }
 
@@ -414,7 +636,7 @@ struct RichText: View {
                 if seg.isCode {
                     CodeBlock(code: seg.text, language: seg.language)
                 } else {
-                    Text(markdown(seg.text)).textSelection(.enabled).lineSpacing(3)
+                    MarkdownBlocks(text: seg.text)
                 }
             }
         }
@@ -439,8 +661,137 @@ struct RichText: View {
         return out.filter { !$0.text.isEmpty || $0.isCode }
     }
 
-    private func markdown(_ s: String) -> AttributedString {
+}
+
+/// Markdown-Blöcke außerhalb von Code: Überschriften, Tabellen, Listen, Zitate, Trennlinien, Absätze.
+private struct MarkdownBlocks: View {
+    let text: String
+
+    enum Block {
+        case heading(Int, String)
+        case table([[String]])
+        case bullet(String, marker: String, indent: Int)
+        case quote(String)
+        case rule
+        case paragraph(String)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                switch block {
+                case let .heading(level, t):
+                    Text(Self.inline(t))
+                        .font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline)
+                        .padding(.top, level <= 2 ? 6 : 2)
+                case let .table(rows):
+                    MarkdownTable(rows: rows)
+                case let .bullet(t, marker, indent):
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(marker).foregroundStyle(.secondary).frame(minWidth: 14, alignment: .trailing)
+                        Text(Self.inline(t)).lineSpacing(3)
+                    }
+                    .padding(.leading, CGFloat(indent) * 16)
+                case let .quote(t):
+                    Text(Self.inline(t)).foregroundStyle(.secondary).padding(.leading, 10)
+                        .overlay(alignment: .leading) { Rectangle().fill(Theme.primary.opacity(0.6)).frame(width: 3) }
+                case .rule:
+                    Divider().padding(.vertical, 4)
+                case let .paragraph(t):
+                    Text(Self.inline(t)).lineSpacing(3)
+                }
+            }
+        }
+        .textSelection(.enabled)
+    }
+
+    static func inline(_ s: String) -> AttributedString {
         (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+    }
+
+    private var blocks: [Block] {
+        var out: [Block] = []
+        var paragraph: [String] = []
+        var table: [[String]] = []
+        func flush() {
+            if !paragraph.isEmpty { out.append(.paragraph(paragraph.joined(separator: "\n"))); paragraph = [] }
+            if !table.isEmpty { out.append(.table(table)); table = [] }
+        }
+        for raw in text.components(separatedBy: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("|") {
+                if !paragraph.isEmpty { out.append(.paragraph(paragraph.joined(separator: "\n"))); paragraph = [] }
+                var cells = line.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+                if cells.first == "" { cells.removeFirst() }
+                if cells.last == "" { cells.removeLast() }
+                // Trennzeile |---|:--:| überspringen
+                if !cells.isEmpty && cells.allSatisfy({ !$0.isEmpty && $0.allSatisfy { "-:".contains($0) } }) { continue }
+                table.append(cells)
+                continue
+            }
+            if !table.isEmpty { out.append(.table(table)); table = [] }
+            if line.isEmpty { flush(); continue }
+            if let m = line.firstMatch(of: /^(#{1,6})\s+(.+)$/) {
+                flush(); out.append(.heading(m.1.count, String(m.2)))
+            } else if line == "---" || line == "***" || line == "___" {
+                flush(); out.append(.rule)
+            } else if let m = line.firstMatch(of: /^[-*+]\s+(.+)$/) {
+                flush(); out.append(.bullet(String(m.1), marker: "•", indent: Self.indent(raw)))
+            } else if let m = line.firstMatch(of: /^(\d+)[.)]\s+(.+)$/) {
+                flush(); out.append(.bullet(String(m.2), marker: "\(m.1).", indent: Self.indent(raw)))
+            } else if let m = line.firstMatch(of: /^>\s?(.*)$/) {
+                flush(); out.append(.quote(String(m.1)))
+            } else {
+                paragraph.append(raw)
+            }
+        }
+        flush()
+        return out
+    }
+
+    private static func indent(_ raw: String) -> Int {
+        min(raw.prefix { $0 == " " || $0 == "\t" }.count / 2, 3)
+    }
+}
+
+private struct MarkdownTable: View {
+    let rows: [[String]]
+
+    private var columns: Int { rows.map(\.count).max() ?? 0 }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            table
+            ScrollView(.horizontal, showsIndicators: false) { table }
+        }
+    }
+
+    private var table: some View {
+            Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
+                    GridRow {
+                        ForEach(0..<columns, id: \.self) { c in cell(row, r, c) }
+                    }
+                    .background(rowBackground(r))
+                    if r < rows.count - 1 { Divider().gridCellColumns(columns) }
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func cell(_ row: [String], _ r: Int, _ c: Int) -> some View {
+        Text(MarkdownBlocks.inline(c < row.count ? row[c] : ""))
+            .font(r == 0 ? Font.callout.weight(.semibold) : Font.callout)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)   // umbrechen statt abschneiden
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .frame(minWidth: 80, maxWidth: 320, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func rowBackground(_ r: Int) -> AnyShapeStyle {
+        if r == 0 { return AnyShapeStyle(.quaternary.opacity(0.6)) }
+        return r % 2 == 0 ? AnyShapeStyle(.quaternary.opacity(0.25)) : AnyShapeStyle(Color.clear)
     }
 }
 
@@ -454,6 +805,12 @@ struct CodeBlock: View {
             HStack {
                 Text(language.isEmpty ? "Code" : language).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
+                if ["html", "svg", "md", "markdown"].contains(language.lowercased()) {
+                    Button { AppState.shared.session.preview.showSnippet(code, language: language) } label: {
+                        Label("Vorschau", systemImage: "play.rectangle")
+                    }
+                    .buttonStyle(.borderless).font(.caption2)
+                }
                 Button {
                     AppState.copy(code)
                     copied = true
@@ -474,33 +831,6 @@ struct CodeBlock: View {
 }
 
 
-private struct HistoryMenu: View {
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        let _ = app.session.historyVersion
-        Menu {
-            let chats = ChatStore.list().prefix(25)
-            if chats.isEmpty { Text("Noch keine Gespräche") }
-            ForEach(chats) { chat in
-                Button {
-                    app.session.load(id: chat.id)
-                } label: {
-                    Text("\(chat.title) – \(chat.date.formatted(date: .abbreviated, time: .shortened))")
-                }
-            }
-            if !chats.isEmpty {
-                Divider()
-                Button("Aktuelles Gespräch löschen", role: .destructive) {
-                    ChatStore.delete(id: app.session.chatID)
-                    app.session.reset()
-                }
-            }
-        } label: {
-            Label("Verlauf", systemImage: "clock.arrow.circlepath")
-        }
-    }
-}
 
 
 enum ImageAttachment {
@@ -580,6 +910,42 @@ struct TalkBar: View {
         case .thinking: return app.selectedModelName
         case .speaking: return "Danach höre ich automatisch wieder zu."
         case .off: return ""
+        }
+    }
+}
+
+private struct CompactLabelStyle: LabelStyle {
+    let compact: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        if compact { Label(configuration).labelStyle(.iconOnly) } else { Label(configuration).labelStyle(.titleAndIcon) }
+    }
+}
+
+/// Ordnet Elemente nebeneinander an und bricht in die nächste Zeile um, wenn der Platz nicht reicht.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, row: CGFloat = 0, widest: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x > 0 && x + s.width > width { x = 0; y += row + spacing; row = 0 }
+            x += s.width + spacing
+            row = max(row, s.height)
+            widest = max(widest, x - spacing)
+        }
+        return CGSize(width: min(widest, width), height: y + row)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, row: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x > bounds.minX && x + s.width > bounds.maxX { x = bounds.minX; y += row + spacing; row = 0 }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(s))
+            x += s.width + spacing
+            row = max(row, s.height)
         }
     }
 }

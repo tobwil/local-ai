@@ -17,6 +17,8 @@ final class AppState {
     let installer = EngineInstaller()
     let knowledge = KnowledgeBase()
     let automations = AutomationCenter()
+    let usage = UsageMonitor()
+    let assistants = AssistantStore()
 
     // MARK: Gesprächsmodus
     enum TalkPhase: Equatable { case off, listening, thinking, speaking }
@@ -29,6 +31,10 @@ final class AppState {
     /// Wird erhöht, wenn sich installierte Modelle ändern, damit die Ansichten neu prüfen.
     private(set) var installGeneration = 0
     var useBuiltinTools = true
+    /// Bitte an die Oberfläche, einen Bereich zu zeigen (z. B. wenn ein Auftrag von außen kommt).
+    var requestedScreen: Screen?
+    /// Kurzer Hinweis oben im Agent-Tab (verschwindet nach einigen Sekunden).
+    var notice: String?
     var useWebTools = true
 
     init() {
@@ -41,6 +47,7 @@ final class AppState {
         let limitGiB = hw.gpuLimitGB * 1e9 / 1_073_741_824
         server.memoryCeilingGiB = ((limitGiB - 0.05) * 10).rounded(.down) / 10
         BundledSkills.installIfNeeded()
+        Task { await DevEnvironment.detect() }
         session.onFinish = { [weak self] text in
             guard let self else { return }
             if self.talkMode {
@@ -98,6 +105,15 @@ final class AppState {
         if useWebTools { tools += BuiltinTools.web() }
         if settings.browserEnabled { tools += BrowserTools.all() }
         if useBuiltinTools { tools += SystemTools.all() }
+        if useBuiltinTools {
+            tools.append(Documents.tool({ [weak self] in self?.session.workspace ?? Paths.home }) { [weak self] url in
+                self?.session.preview.show(url)
+            })
+            tools.append(Transcription.tool { [weak self] in self?.session.workspace ?? Paths.home })
+            tools.append(Documents.canvasTool({ [weak self] in self?.session.workspace ?? Paths.home }) { [weak self] url in
+                self?.session.preview.openCanvas(url)
+            })
+        }
         if settings.pimEnabled { tools += PIMTools.all() }
         if knowledge.chunkCount > 0 { tools.append(knowledge.tool()) }
         if settings.screenEnabled { tools.append(ScreenCapture.lookTool { [weak self] in self?.visionModelID }) }
@@ -107,10 +123,113 @@ final class AppState {
         return tools + mcp.tools
     }
 
+    /// `kilokal://agent?projekt=Name&vorschau=1` (oder `vorschau=/pfad/datei.html`), `kilokal://modelle` …
+    /// – Bereich zeigen, im Agent-Tab auch Projekt und Vorschau.
+    func open(link url: URL) {
+        guard url.scheme == "kilokal", let screen = Screen(link: url.host() ?? "") else { return }
+        requestedScreen = screen
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func value(_ names: String...) -> String? { query.first { names.contains($0.name) }?.value }
+        if value("engine") == "start" { Task { _ = await ensureEngine() } }
+        if screen == .agent {
+            if let name = value("projekt", "project") {
+                let p = session.projects.projects.first { $0.name.lowercased() == name.lowercased() }
+                if p != nil || ["allgemein", "ohne", "keins"].contains(name.lowercased()) { session.switchProject(p) }
+            }
+            if let id = value("chat", "gespraech") { session.load(id: id) }
+            if let v = value("vorschau", "preview") {
+                let path = (v as NSString).expandingTildeInPath
+                if path.hasPrefix("/"), FileManager.default.fileExists(atPath: path) {
+                    session.preview.show(URL(fileURLWithPath: path))
+                    if value("bearbeiten", "edit") == "1" { session.preview.editing = true }
+                } else {
+                    session.preview.isOpen = v == "1" || v == "true"
+                }
+            }
+        }
+        NSApp.activate()
+    }
+
+    // MARK: Skills aus Gesprächen
+
+    /// Entwurf einer SKILL.md aus einem gespeicherten Gespräch (Ablauf, Werkzeuge, Stolperfallen).
+    func draftSkill(fromChat id: String) async throws -> String {
+        guard let json = ChatStore.load(id: id) else { throw ToolError.invalid("Gespräch nicht gefunden") }
+        var transcript = ""
+        for item in json["items"] as? [[String: Any]] ?? [] {
+            switch item["k"] as? String {
+            case "user": transcript += "\n\n[Nutzer] " + String((item["text"] as? String ?? "").prefix(2000))
+            case "assistant":
+                let t = item["text"] as? String ?? ""
+                if !t.isEmpty { transcript += "\n\n[Agent] " + String(t.prefix(1500)) }
+            case "tool":
+                transcript += "\n[Werkzeug \(item["name"] as? String ?? "?") – \(item["state"] as? String ?? "")] "
+                    + String((item["args"] as? String ?? "").prefix(300)).replacingOccurrences(of: "\n", with: " ")
+            default: break
+            }
+            if transcript.count > 14_000 { transcript += "\n…"; break }
+        }
+        let system = """
+        Du schreibst Skills für einen KI-Agenten (Format wie bei Claude Code). Ein Skill ist eine wiederverwendbare \
+        Schritt-für-Schritt-Anleitung, gewonnen aus einem erfolgreichen Gespräch. Gib NUR den Inhalt einer SKILL.md aus:
+        ---
+        name: kurzer-name-in-kebab-case
+        description: Nutzen, wenn … (ein Satz, wann der Skill passt)
+        ---
+        # Titel
+        ## Wann verwenden
+        ## Schritte
+        (nummeriert und konkret: welche Werkzeuge, Befehle, Prüfungen)
+        ## Ergebnis prüfen
+        ## Stolperfallen
+        (was im Gespräch schiefging und wie man es vermeidet)
+        Verallgemeinere: keine einmaligen Details, außer sie gehören zum Ablauf. Schreibe auf Deutsch.
+        """
+        var md = try await LLMClient.collect(model: selectedModelID, system: system,
+                                             prompt: "Gespräch:\n\(transcript)\n\nSchreibe jetzt die SKILL.md.", maxTokens: 2500)
+        md = md.trimmingCharacters(in: .whitespacesAndNewlines)
+        if md.hasPrefix("```") {
+            md = md.components(separatedBy: "\n").dropFirst().joined(separator: "\n")
+            if md.hasSuffix("```") { md = String(md.dropLast(3)) }
+        }
+        if let start = md.range(of: "---") { md = String(md[start.lowerBound...]) }
+        return md.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
+    }
+
+    /// SKILL.md speichern (~/.kilokal/skills/<name>/) und Skills neu einlesen. Liefert den Namen.
+    func saveSkill(markdown: String) throws -> String {
+        guard let m = markdown.firstMatch(of: /(?m)^name:\s*(.+)$/) else {
+            throw ToolError.invalid("Im Kopf fehlt „name: …“")
+        }
+        let base = String(m.1).lowercased().trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "ä", with: "ae").replacingOccurrences(of: "ö", with: "oe")
+            .replacingOccurrences(of: "ü", with: "ue").replacingOccurrences(of: "ß", with: "ss")
+            .replacing(/[^a-z0-9]+/, with: "-").trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        guard !base.isEmpty else { throw ToolError.invalid("Ungültiger Name") }
+        var name = base, n = 2
+        while FileManager.default.fileExists(atPath: PluginManager.skillsDir.appendingPathComponent(name).path) {
+            name = "\(base)-\(n)"; n += 1
+        }
+        let dir = PluginManager.skillsDir.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let text = markdown.replacingOccurrences(of: "name: \(m.1)", with: "name: \(name)")
+        try text.write(to: dir.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        plugins.reload()
+        return name
+    }
+
+    /// Werkzeuge des aktuellen Modus im Agent-Tab (Chat · Arbeiten · Code).
+    var modeTools: [AgentTool] { agentTools.filter(session.mode.allows) }
+
     var agentContext: AgentContext {
-        AgentContext(skills: plugins.skills, agents: plugins.agents, commands: plugins.commands,
-                     customInstructions: settings.customInstructions,
-                     maxSteps: settings.maxSteps, maxTokens: settings.maxTokens)
+        var c = AgentContext(skills: plugins.skills, agents: plugins.agents, commands: plugins.commands,
+                             customInstructions: settings.customInstructions,
+                             maxSteps: settings.maxSteps, maxTokens: settings.maxTokens)
+        c.selfDescription = selectedIsCloud
+            ? "Du bist \(selectedModelName) (Cloud) und arbeitest in der Mac-App KI/lokal von KIsruptiv."
+            : "Du bist \(selectedModelName) und läufst über die App KI/lokal von KIsruptiv vollständig lokal auf diesem Mac "
+              + "(\(hardware.chip), \(hardware.memoryGiB) GB Arbeitsspeicher) – ohne Cloud."
+        return c
     }
 
     private var skillTool: AgentTool {
@@ -183,6 +302,7 @@ final class AppState {
         await mcp.connectAll()
         await mcp.setPluginServers(plugins.mcpServers)
         automations.start()
+        AgentHandoff.listen(self)
         Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
@@ -285,6 +405,7 @@ final class AppState {
                let jpeg = try? await ScreenCapture.capture(.screen) {
                 session.attachments.append(jpeg)
             }
+            guard await ensureEngine() else { talkListen(); return }
             session.input = text
             send()
             // Kein Text zurück (Fehler/Abbruch)? Dann weiter zuhören.
@@ -317,16 +438,45 @@ final class AppState {
     /// Letzte Entscheidung des Routers (für die Anzeige im Chat).
     private(set) var lastRoute: (topic: ModelRouter.Topic, model: String)?
 
-    func send() {
+    /// Senden geht, sobald eine Engine installiert ist – läuft sie nicht, startet `send()` sie vorher.
+    var canSendOrStart: Bool { canSend || server.engineInstalled }
+
+    /// Engine bereit machen: läuft sie schon (auch von außen gestartet), sofort true; sonst starten und warten.
+    func ensureEngine() async -> Bool {
+        if canSend { return true }
+        guard server.engineInstalled else { return false }
+        await server.probe()
+        if !server.state.isUp { server.start() }   // tut nichts, wenn sie schon startet
+        for _ in 0..<240 where !server.state.isUp {
+            try? await Task.sleep(for: .milliseconds(500))
+            await server.probe()
+        }
+        return server.state.isUp
+    }
+
+    func send(adjust: @escaping (inout AgentContext) -> Void = { _ in }) {
+        if !canSend && server.engineInstalled {
+            // Engine automatisch starten und danach abschicken (Eingabe bleibt bis dahin stehen).
+            Task { if await ensureEngine() { send(adjust: adjust) } }
+            return
+        }
         if voice.isListening { voice.stopListening() }
         let model = routedModel()
         var context = agentContext
         context.spoken = talkMode
         // MTP "Automatisch": nur bei Code-Aufgaben spekulieren (Header X-oMLX-MTP).
         if ModelSettingsStore.acceleration(for: model) == .auto {
-            context.mtp = ModelRouter.classify(session.input, hasImages: false, isCommand: session.input.hasPrefix("/")) == .code
+            switch session.mode {
+            case .chat: context.mtp = false
+            case .code: context.mtp = true
+            case .work:
+                context.mtp = ModelRouter.classify(session.input, hasImages: false, isCommand: session.input.hasPrefix("/")) == .code
+            }
         }
-        session.send(model: model, tools: agentTools, context: context)
+        // Code-Projekte schreiben ganze Dateien in einer Antwort – dafür mehr Platz (der Kontext reicht auf 24 GB für ~29k).
+        if session.mode == .code { context.maxTokens = max(context.maxTokens, 16_384) }
+        adjust(&context)
+        session.send(model: model, tools: modeTools, context: context)
     }
 
     /// Ohne Router: das gewählte Modell. Mit Router: das Modell für das Thema der Nachricht, sofern installiert.

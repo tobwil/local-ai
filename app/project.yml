@@ -24,9 +24,12 @@ targets:
       properties:
         CFBundleName: KI/lokal
         CFBundleDisplayName: KI/lokal
-        CFBundleShortVersionString: "0.5.0"
+        CFBundleShortVersionString: "0.6.0"
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.developer-tools
+        CFBundleURLTypes:
+          - CFBundleURLName: de.kisruptiv.kilokal
+            CFBundleURLSchemes: [kilokal]
         NSHumanReadableCopyright: "© 2026 KIsruptiv · kisruptiv.de"
         NSMicrophoneUsageDescription: "KI/lokal nutzt das Mikrofon für das Diktat im Chat."
         NSSpeechRecognitionUsageDescription: "KI/lokal wandelt dein Diktat auf dem Mac in Text um."

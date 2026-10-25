@@ -17,9 +17,27 @@ enum HomeNetwork {
         return key
     }
 
+    /// Schlüssel der Engine: im Heimnetz der Freigabe-Schlüssel, sonst ein lokaler (nur auf diesem Mac).
+    /// Ohne Freigabe dürfen Programme auf dem Mac auch ohne Schlüssel chatten; Verwaltung und Statistik
+    /// der Engine verlangen ihn immer.
+    static var engineKey: String { key ?? localKey }
+
+    nonisolated(unsafe) private static var cachedLocalKey: String?
+    static var localKey: String {
+        if let k = cachedLocalKey { return k }
+        let k = Keychain.get("localEngineKey") ?? {
+            let alphabet = Array("abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+            let new = "kl-local-" + String((0..<32).map { _ in alphabet.randomElement()! })
+            Keychain.set("localEngineKey", new)
+            return new
+        }()
+        cachedLocalKey = k
+        return k
+    }
+
     /// Header für Anfragen an den eigenen Server.
     static func authorize(_ req: inout URLRequest) {
-        if let key { req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
+        req.setValue("Bearer \(engineKey)", forHTTPHeaderField: "Authorization")
     }
 
     static var hostName: String {

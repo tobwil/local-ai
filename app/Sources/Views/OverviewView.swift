@@ -10,6 +10,7 @@ struct OverviewView: View {
                 CrashBanner()
                 hero
                 HardwareGrid(hw: app.hardware)
+                UsageCard()
                 fitList
                 KisruptivFooter()
             }
@@ -159,6 +160,75 @@ struct HardwareGrid: View {
     }
 }
 
+
+/// Nutzung der Engine (wie im oMLX-Webinterface) und Zustand des Macs – aktualisiert sich alle 5 Sekunden.
+struct UsageCard: View {
+    @Environment(AppState.self) private var app
+    @State private var alltime = true
+
+    var body: some View {
+        let u = app.usage
+        Card {
+            HStack {
+                Label("Nutzung & Mac", systemImage: "chart.line.uptrend.xyaxis").font(.headline)
+                Spacer()
+                Picker("", selection: $alltime) {
+                    Text("Seit Engine-Start").tag(false)
+                    Text("Insgesamt").tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+            }
+            let e = alltime ? u.alltime : u.session
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
+                tile("text.word.spacing", "Tokens verarbeitet", e.map { Self.count($0.tokensServed) } ?? "–",
+                     e.map { "\(Self.count($0.promptTokens)) rein · \(Self.count($0.completionTokens)) raus" })
+                tile("arrow.left.arrow.right", "Anfragen", e.map { "\($0.requests)" } ?? "–",
+                     u.activeRequests > 0 ? "\(u.activeRequests) läuft gerade" : nil)
+                tile("bolt.fill", "Ø Antwort-Tempo", e.map { $0.generationTPS > 0 ? "\($0.generationTPS.oneDecimal) tok/s" : "–" } ?? "–",
+                     e.map { $0.prefillTPS > 0 ? "Eingabe \(Int($0.prefillTPS)) tok/s" : nil } ?? nil)
+                tile("arrow.triangle.2.circlepath", "Cache-Treffer", e.map { "\(Int($0.cacheEfficiency)) %" } ?? "–",
+                     e.map { "\(Self.count($0.cachedTokens)) Tokens wiederverwendet" })
+                tile("memorychip", "Modell im Speicher", u.modelMemory.map { "\(Self.gb($0.used)) von \(Self.gb($0.max))" } ?? "–",
+                     u.pressure.isEmpty ? nil : "Druck: \(Self.pressure(u.pressure))")
+                tile("thermometer.medium", "Temperatur", u.temperature.map { "\(Int($0.rounded())) °C" } ?? u.thermalText.capitalized,
+                     u.temperature == nil ? nil : u.thermalText, warn: u.thermal == .serious || u.thermal == .critical)
+                tile("clock", "Engine läuft seit", e.map { Self.duration($0.uptime) } ?? "–", nil)
+                tile("cpu", "Modell", app.selectedModelName, app.server.state.isUp ? "bereit" : "Engine aus")
+            }
+            if u.thermal == .serious || u.thermal == .critical {
+                Label("Der Mac ist heiß und drosselt – lange Agent-Läufe werden langsamer (gemessen bis −24 %). Eine harte Unterlage oder kurze Pausen helfen.",
+                      systemImage: "flame").font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                await app.usage.refresh()
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
+
+    private func tile(_ icon: String, _ label: String, _ value: String, _ sub: String?, warn: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Image(systemName: icon).foregroundStyle(warn ? AnyShapeStyle(.orange) : AnyShapeStyle(Theme.brand))
+            Text(value).font(.headline.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7)
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            if let sub { Text(sub).font(.caption2).foregroundStyle(warn ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary)).lineLimit(1) }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    static func count(_ n: Int) -> String {
+        n >= 1_000_000 ? String(format: "%.1f Mio.", Double(n) / 1e6) : n >= 10_000 ? String(format: "%.1f Tsd.", Double(n) / 1e3) : "\(n)"
+    }
+    static func gb(_ bytes: Int64) -> String { String(format: "%.1f GB", Double(bytes) / 1_073_741_824) }
+    static func pressure(_ p: String) -> String { ["ok": "normal", "soft": "erhöht", "hard": "hoch"][p] ?? p }
+    static func duration(_ s: Double) -> String {
+        s < 3600 ? "\(Int(s / 60)) min" : String(format: "%d h %02d min", Int(s / 3600), Int(s.truncatingRemainder(dividingBy: 3600) / 60))
+    }
+}
 
 /// Absender: ein Tool von KIsruptiv.
 struct KisruptivFooter: View {

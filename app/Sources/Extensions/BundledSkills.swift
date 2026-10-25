@@ -1,6 +1,6 @@
 import Foundation
 
-/// Kopiert die mitgelieferten Skills beim ersten Start nach ~/.strata-lite/skills.
+/// Kopiert die mitgelieferten Skills beim ersten Start nach ~/.kilokal/skills.
 /// Vorhandene Ordner bleiben unangetastet, damit eigene Änderungen erhalten bleiben.
 enum BundledSkills {
     static func installIfNeeded() {

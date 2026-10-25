@@ -3,8 +3,7 @@
 **KI für alle – direkt auf deinem Mac.** Ein Tool von [KIsruptiv](https://kisruptiv.de).
 
 KI/lokal holt nahezu Frontier-Modelle auf Macs mit Apple Silicon – privat, offline, ohne Abo und schnell genug
-für den Alltag (≥ 40 tok/s). Inspiriert von [Strata](https://github.com/Niko1221/Strata), aber für Macs mit wenig
-Speicher gebaut: Die App erkennt die Hardware, empfiehlt das passende Modell, richtet die Engine ein und bringt einen
+für den Alltag (≥ 40 tok/s). Gebaut für Macs mit wenig Speicher (ab 24 GB): Die App erkennt die Hardware, empfiehlt das passende Modell, richtet die Engine ein und bringt einen
 Agenten mit Werkzeugen, Skills, Plugins, MCP, Browser-Steuerung, Sprache und Vision mit.
 
 Das Logo „KI/sruptiv“ ist eine Marke von KIsruptiv. Engine: [oMLX](https://github.com/jundot/omlx) (Apache 2.0).
@@ -38,17 +37,17 @@ DFlash war in jeder Aufgabe langsamer als MTP. Alle Rohdaten liegen in [`benchma
 
 ```bash
 # Python-Umgebung für Benchmarks (mlx-lm 0.31.3 ist für dflash-mlx 0.1.8 nötig)
-~/.local/bin/python3.12 -m venv ~/.strata-lite/venv
-~/.strata-lite/venv/bin/pip install mlx-lm==0.31.3 dflash-mlx
+~/.local/bin/python3.12 -m venv ~/.kilokal/venv
+~/.kilokal/venv/bin/pip install mlx-lm==0.31.3 dflash-mlx
 
 # oMLX aus dem Quellcode (die Homebrew-Formel scheitert an einem spaCy-Selbsttest)
-git clone --depth 1 https://github.com/jundot/omlx.git ~/.strata-lite/src-omlx
-~/.local/bin/python3.12 -m venv ~/.strata-lite/omlx-venv
-~/.strata-lite/omlx-venv/bin/pip install cmake
-PATH=~/.strata-lite/omlx-venv/bin:$PATH make -C ~/.strata-lite/src-omlx install PYTHON=~/.strata-lite/omlx-venv/bin/python
+git clone --depth 1 https://github.com/jundot/omlx.git ~/.kilokal/src-omlx
+~/.local/bin/python3.12 -m venv ~/.kilokal/omlx-venv
+~/.kilokal/omlx-venv/bin/pip install cmake
+PATH=~/.kilokal/omlx-venv/bin:$PATH make -C ~/.kilokal/src-omlx install PYTHON=~/.kilokal/omlx-venv/bin/python
 
 # Modell
-~/.strata-lite/venv/bin/hf download mlx-works/Ornith-1.5-35B-A3B-oQ3e-mtp --local-dir ~/.strata-lite/models/Ornith-1.5-35B-A3B-oQ3e-mtp
+~/.kilokal/venv/bin/hf download mlx-works/Ornith-1.5-35B-A3B-oQ3e-mtp --local-dir ~/.kilokal/models/Ornith-1.5-35B-A3B-oQ3e-mtp
 ```
 
 ## Werkzeuge
@@ -62,27 +61,32 @@ PATH=~/.strata-lite/omlx-venv/bin:$PATH make -C ~/.strata-lite/src-omlx install 
 ```bash
 python3 tools/mode.py Ornith-1.5-35B-A3B-oQ3e-mtp plain
 tools/serve.sh
-~/.strata-lite/venv/bin/python tools/bench.py http --no-think --tag mein-lauf
-~/.strata-lite/venv/bin/python tools/bench.py report
+~/.kilokal/venv/bin/python tools/bench.py http --no-think --tag mein-lauf
+~/.kilokal/venv/bin/python tools/bench.py report
 ```
 
 ## Mac-App „KI/lokal“ (`app/`)
+
+📖 **[Anleitung mit Screenshots](docs/ANLEITUNG.md)** – jeder Bereich der App erklärt.
+
+![KI/lokal](docs/bilder/agent-code-vorschau.png)
 
 SwiftUI-App für macOS 15+ im KIsruptiv-Design (Dunkelblau `#274060`, Hellblau `#7590BF`, Gold `#FCC419`),
 die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
 
 | Bereich | Was er kann |
 |---|---|
-| **Übersicht** | erkennt Chip, RAM, GPU-Limit, Bandbreite und SSD, empfiehlt das passende Modell, zeigt erwartete tok/s; richtet die Engine per Klick ein |
+| **Übersicht** | erkennt Chip, RAM, GPU-Limit, Bandbreite und SSD, empfiehlt das passende Modell, zeigt erwartete tok/s; richtet die Engine per Klick ein; **Nutzung & Mac**: Tokens, Anfragen, Tempo, Cache-Treffer, Speicher und **Chip-Temperatur** live |
 | **Wissen** | eigene Ordner indexieren (Text, Markdown, PDF, Word, RTF, HTML, Code), Hybrid-Suche aus Stichwörtern und Bedeutung (Embeddings von macOS, auf dem Gerät), Quellenangabe |
 | **Automationen** | Aufträge nach Zeitplan (Uhrzeit + Wochentage oder Intervall), Vorlage **Morgen-Briefing**, Ergebnis als Mitteilung, vorgelesen oder Datei; Start bei Anmeldung |
-| **Agent** | Chat mit Streaming und Live-tok/s, **Gesprächsmodus**, Diktat und Vorlesen, Bilder und Bildschirmfotos (Vision), Slash-Befehle, Verlauf; Werkzeuge mit Freigabe oder YOLO |
+| **Agent** | ein Eingabefeld für alles; **Projekte** (Gespräche + Ordner + Anweisungen, Code-Projekte automatisch erkannt); **Gesprächsliste mit Volltextsuche**, Umbenennen; **Vorschau** (Seiten und Spiele live) und **formatierter Canvas**; Dateien anhängen (PDF, Word, Excel, PowerPoint, ZIP, Audio …); Dokumente erzeugen (PDF, Word, Excel); Arbeitsschritte kompakt in Klartext; **Gesprächsmodus**, Diktat, Vorlesen, Bildschirmfotos; Freigaben in Klartext oder YOLO |
+| **Assistenten** | Galerie fertiger Funktionen: **Transkribieren** (lokal), Meeting-Protokoll, Dokument zusammenfassen, Excel auswerten, Übersetzen, E-Mail beantworten, Recherche-Bericht …; eigene aus Gesprächen; als Automation nach Zeitplan |
 | **Modelle** | Katalog (Ornith, Qwen 3.6 Vision, Gemma 4, LFM2.5, Mellum), lokal gefundene Modelle, Cloud-Modelle; **Hugging-Face-Browser** mit Bewertung „läuft gut / langsam / knapp / zu groß“, tok/s-Schätzung und Prüfung, ob die installierte Engine die Architektur kennt |
 | **Vergleich** | lokale Modelle gegen GPT-6 Astra, GPT-6.1 Sol, GPT-5.5/5.6, Claude Opus 5/5.5, Fable 5.1, Mythos 5, Gemini 3.1 – SWE-bench Verified/Pro, Terminal-Bench, GPQA, HLE, ARC-AGI-2 (Stand 25.10.2026, mit Quellen) |
 | **Skills & Plugins** | Claude-Code-Format: Skills (`SKILL.md`), Plugins mit Befehlen, Sub-Agenten und MCP; Katalog aus Marketplaces (offizieller Anthropic-Katalog, eigene per Git), Installation per Klick |
 | **Werkzeuge & MCP** | MCP-Client für stdio- und HTTP-Server (Format wie Claude Desktop, Import, Vorlagen, `${VAR}`-Ersetzung) |
 | **Verbinden** | Claude Code / Claude Desktop / OpenAI-kompatible Clients; die App selbst als MCP-Server (`--mcp-server`) |
-| **Protokoll** | jede Werkzeug-Aktion des Agenten (Freigabe, YOLO, unbeaufsichtigt) in `~/.strata-lite/logs/actions.jsonl`, dazu Engine- und MCP-Log |
+| **Protokoll** | jede Werkzeug-Aktion des Agenten (Freigabe, YOLO, unbeaufsichtigt) in `~/.kilokal/logs/actions.jsonl`, dazu Engine- und MCP-Log |
 | **Einstellungen** | Heimnetz-Freigabe (iPhone per QR-Code), YOLO-Modus + Notbremse, Browser-Steuerung, Kalender/Erinnerungen/Kontakte/Mail, GPU-Speicher erhöhen, Engine einrichten, Websuche (DuckDuckGo, SearXNG, Brave), Modell-Router nach Thema, Cloud-Anbieter (Anthropic, OpenAI-kompatibel), Experte für `ask_expert`, eigene Anweisungen |
 
 **Werkzeuge des Agenten:**
@@ -93,10 +97,38 @@ die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
 | Web | `web_search`, `fetch_url`, `http_request` (GET/POST/PUT/PATCH/DELETE) |
 | Dein Browser | `browser_tabs`, `browser_open`, `browser_read`, `browser_click`, `browser_type`, `browser_scroll`, `browser_back` – Brave, Chrome, Edge, Arc, Safari über JavaScript for Automation |
 | Mac | `clipboard_read`, `clipboard_write`, `notify`, `look_at_screen` (Bildschirmfoto → Vision-Modell) |
+| Dokumente | `create_document` (PDF, Word, Excel, CSV, RTF, HTML aus Markdown), `open_canvas` (bearbeitbarer Canvas), `transcribe` (Audio/Video → Text, lokal) |
 | Kalender & Co. | `calendar_events`, `calendar_create`, `reminders_list`, `reminders_create`, `contacts_search`, `mail_recent`, `mail_draft` (nur Entwürfe, nie selbst senden) |
-| Gedächtnis & Wissen | `remember`, `forget` (`~/.strata-lite/memory.md`), `search_documents` (eigene Ordner) |
+| Gedächtnis & Wissen | `remember`, `forget` (`~/.kilokal/memory.md`), `search_documents` (eigene Ordner) |
 | Agenten | `use_skill`, `run_agent` (Sub-Agenten aus Plugins), `ask_expert` (Cloud-Briefing) |
 | MCP | alle Werkzeuge verbundener MCP-Server, Vorlagen u. a. Playwright und Chrome DevTools |
+
+**Projekte statt Modi:** Ein Projekt bündelt Gespräche, einen Ordner und eigene Anweisungen. Liegt im Ordner Code
+(`.git`, `package.json`, `index.html` …), arbeitet der Agent automatisch als Coding-Agent (Code-Werkzeuge, Prüfung nach
+jeder Änderung, MTP ~80 tok/s); sonst stehen alle Werkzeuge bereit. Pro Projekt fest einstellbar (Automatisch · Nur Chat ·
+Arbeiten · Code).
+
+**Qualität trotz kleinem Modell:** KI/lokal ergänzt das Modell um das, was ihm fehlt:
+- **Umgebung:** Die App ermittelt beim Start node, python3, git, npm, swift (Pfad + Version, kaputte Installationen
+  übersprungen) und nennt sie im Systemprompt.
+- **Automatische Prüfung** nach jedem `write_file`/`edit_file`: JS/JSON/Python/Shell auf Syntax; HTML-Skripte mit
+  Zeilennummern bezogen auf die HTML-Datei; die Seite wird **unsichtbar in WebKit geladen** und auf Laufzeitfehler,
+  `console.error` und fehlende Dateien geprüft. Der Befund steht in der Werkzeug-Antwort.
+- **Qualitäts-Check vor „fertig“:** Hat der Agent Dateien geändert, bekommt er einmal alle Prüfergebnisse und den
+  ursprünglichen Auftrag zurück und muss Fehler, fehlende Punkte und Tippfehler beheben.
+- **Längen- und Schrittlimit:** abgeschnittene Antworten werden in Teilen fortgesetzt; kurz vor dem Limit eine Erinnerung,
+  danach „Weitermachen“.
+
+**Vorschau und Canvas:** Rechts neben dem Chat zeigt ein Panel, was der Agent schreibt – HTML und Spiele laufen live
+(WebKit, mit Web-Inspektor, auf Panelbreite skaliert), Markdown gerendert, Bilder/PDF/Office per QuickLook, Code mit
+Zeilennummern. Markdown lässt sich als **formatierter Canvas** bearbeiten (Werkzeugleiste, ⌘B/⌘I, automatisch gespeichert,
+Export als PDF/Word/HTML); der Agent öffnet Entwürfe selbst mit `open_canvas`. Ändert der Agent
+ein Skript oder Stylesheet der gezeigten Seite, lädt sie neu. Fehler aus der Browser-Konsole erscheinen unter der Vorschau
+und gehen mit „An Agent schicken“ zurück an den Agenten. HTML-/SVG-/Markdown-Blöcke im Chat haben einen „Vorschau“-Knopf.
+
+**Aufträge aus dem Terminal:** `KI lokal --agent "…" [--workspace <ordner>] [--attach <datei>] [--mode chat|work|code] [--yolo]` übergibt den Auftrag an
+die laufende App – er erscheint live im Agent-Tab, Freigaben erteilst du dort, das Terminal zeigt den Verlauf mit. Läuft die App
+nicht (oder mit `--headless`), arbeitet der Agent ohne Oberfläche; die Notbremse lehnt gefährliche Aktionen dann automatisch ab.
 
 **Freigaben & YOLO:** Schreiben, Shell, Browser-Aktionen, HTTP, MCP und Cloud brauchen eine Freigabe im Chat. Der **YOLO-Modus** (🔥 im Chat)
 führt alles ohne Nachfrage aus. Die abschaltbare **Notbremse** fragt trotzdem bei `sudo`, `rm -rf`, `git push --force`, `git reset --hard`,
@@ -123,7 +155,8 @@ eingereicht als [jundot/omlx#4851](https://github.com/jundot/omlx/pull/4851).
 
 **Heimnetz:** Ein Schalter gibt KI/lokal im WLAN frei – mit zufälligem API-Schlüssel (Schlüsselbund). Das iPhone scannt den
 QR-Code und nutzt den Web-Chat von oMLX (`http://<Mac>.local:8000/admin/chat`), andere Apps die OpenAI-API. Ohne Freigabe lauscht
-der Server ausdrücklich nur auf `127.0.0.1` (oMLX merkt sich `--host` sonst dauerhaft).
+der Server ausdrücklich nur auf `127.0.0.1` (oMLX merkt sich `--host` sonst dauerhaft). Die Freigabe greift nur, wenn die App
+die Engine selbst startet; eine per `tools/serve.sh` gestartete Engine übernimmt sie mit „In der App neu starten“.
 
 **Absturzberichte:** Nach einem Absturz zeigt die Übersicht einen Hinweis; „Melden“ öffnet ein vorausgefülltes GitHub-Issue
 (Version, macOS, Chip, Stack-Frames – keine persönlichen Daten), das du selbst abschickst.
@@ -140,9 +173,10 @@ app/Scripts/make-dmg.sh                    # signierte DMG (Developer ID, Harden
 "app/build/KI lokal.app/Contents/MacOS/KI lokal" --selftest        # Engine, Werkzeuge, MCP, Web, Router, Browser-Skripte …
 "app/build/KI lokal.app/Contents/MacOS/KI lokal" --install-engine  # oMLX ohne Oberfläche einrichten
 "app/build/KI lokal.app/Contents/MacOS/KI lokal" --mcp-server      # lokales Modell als MCP-Server
+"app/build/KI lokal.app/Contents/MacOS/KI lokal" --agent "…" --mode code --workspace demos/x   # Auftrag an die laufende App
 ```
 
-Daten liegen unter `~/.strata-lite/` (Engine, Modelle, Skills, Plugins, Gespräche, Gedächtnis, Wissensindex, Automationen, Protokoll).
+Daten liegen unter `~/.kilokal/` (Engine, Modelle, Skills, Plugins, Gespräche, Gedächtnis, Wissensindex, Automationen, Protokoll).
 
 ## Nächste Schritte
 

@@ -1,10 +1,10 @@
 import Foundation
 
 /// Wo die Engine, die Modelle und die oMLX-Einstellungen liegen.
-/// Die Struktur entspricht den Skripten in tools/ (~/.strata-lite).
+/// Die Struktur entspricht den Skripten in tools/ (~/.kilokal).
 enum Paths {
     static let home = FileManager.default.homeDirectoryForCurrentUser
-    static let base = home.appendingPathComponent(".strata-lite")
+    static let base = home.appendingPathComponent(".kilokal")
     static let models = base.appendingPathComponent("models")
     static let omlx = base.appendingPathComponent("omlx-venv/bin/omlx")
     static let kvCache = base.appendingPathComponent("kv-cache")
