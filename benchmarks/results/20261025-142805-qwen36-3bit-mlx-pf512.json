@@ -1,0 +1,58 @@
+{
+  "label": "Qwen3.6-35B-A3B-UD-MLX-3bit",
+  "tag": "qwen36-3bit-mlx-pf512",
+  "backend": "mlx",
+  "machine": {
+    "chip": "Apple M4",
+    "model": "Mac16,12",
+    "memory_gb": 24,
+    "macos": "26.6.2",
+    "gpu_wired_limit_mb": "0",
+    "power": "AC",
+    "low_power_mode": false
+  },
+  "args": {
+    "cmd": "mlx",
+    "model": "/Users/tobias/.strata-lite/models/Qwen3.6-35B-A3B-UD-MLX-3bit",
+    "draft": null,
+    "prefill_step": 512,
+    "workloads": "context",
+    "contexts": "8k,16k",
+    "max_tokens": 256,
+    "repeat": 1,
+    "temp": 0.0,
+    "no_think": true,
+    "sustain": 0,
+    "tag": "qwen36-3bit-mlx-pf512"
+  },
+  "samples": [
+    {
+      "workload": "context",
+      "target_ctx": 8192,
+      "prompt_tokens": 7275,
+      "gen_tokens": 256,
+      "ttft_s": 22.377172083128244,
+      "prompt_tps": 327.0896441369895,
+      "decode_tps": 31.363366298802614,
+      "peak_mem_gb": 17.36797125,
+      "swap_mb": 4344.44,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792934828.4255161
+    },
+    {
+      "workload": "context",
+      "target_ctx": 16384,
+      "prompt_tokens": 14332,
+      "gen_tokens": 256,
+      "ttft_s": 47.460142750060186,
+      "prompt_tps": 303.0376682352033,
+      "decode_tps": 28.23189279733433,
+      "peak_mem_gb": 17.64754188,
+      "swap_mb": 4000.31,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792934885.102617
+    }
+  ]
+}

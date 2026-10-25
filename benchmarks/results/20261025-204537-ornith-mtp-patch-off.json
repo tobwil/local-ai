@@ -1,0 +1,86 @@
+{
+  "label": "Ornith-1.5-35B-A3B-oQ3e-mtp @ http://127.0.0.1:8000/v1",
+  "tag": "ornith-mtp-patch-off",
+  "backend": "http",
+  "machine": {
+    "chip": "Apple M4",
+    "model": "Mac16,12",
+    "memory_gb": 24,
+    "macos": "26.6.2",
+    "gpu_wired_limit_mb": "0",
+    "power": "AC",
+    "low_power_mode": false
+  },
+  "args": {
+    "cmd": "http",
+    "base_url": "http://127.0.0.1:8000/v1",
+    "model": "Ornith-1.5-35B-A3B-oQ3e-mtp",
+    "mtp_off": true,
+    "workloads": "chat,code",
+    "contexts": "1k,4k,8k,16k",
+    "max_tokens": 256,
+    "repeat": 2,
+    "temp": 0.0,
+    "no_think": true,
+    "sustain": 0,
+    "tag": "ornith-mtp-patch-off"
+  },
+  "samples": [
+    {
+      "workload": "chat",
+      "target_ctx": 0,
+      "prompt_tokens": 65,
+      "gen_tokens": 256,
+      "ttft_s": 0.47678358294069767,
+      "prompt_tps": 136.33019744323852,
+      "decode_tps": 39.0472633608337,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4113.88,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792957497.053659
+    },
+    {
+      "workload": "chat",
+      "target_ctx": 0,
+      "prompt_tokens": 65,
+      "gen_tokens": 256,
+      "ttft_s": 0.488027208019048,
+      "prompt_tps": 133.18929545719715,
+      "decode_tps": 39.22960541613509,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4097.88,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792957504.056926
+    },
+    {
+      "workload": "code",
+      "target_ctx": 0,
+      "prompt_tokens": 2739,
+      "gen_tokens": 256,
+      "ttft_s": 10.017936374992132,
+      "prompt_tps": 273.4096022846972,
+      "decode_tps": 38.2922190880081,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4017.88,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792957520.751435
+    },
+    {
+      "workload": "code",
+      "target_ctx": 0,
+      "prompt_tokens": 2738,
+      "gen_tokens": 256,
+      "ttft_s": 9.947743542026728,
+      "prompt_tps": 275.23829785444656,
+      "decode_tps": 38.2446581787675,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 4001.88,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792957537.381644
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>KI/lokal</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>KI/lokal</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.6.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>de.kisruptiv.kilokal</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>kilokal</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>KI/lokal steuert auf deinen Wunsch deinen Browser (Tabs lesen, Seiten öffnen, klicken, tippen).</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>KI/lokal liest und erstellt auf deinen Wunsch Termine.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>KI/lokal sucht auf deinen Wunsch Kontakte (z. B. E-Mail-Adressen für Entwürfe).</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 KIsruptiv · kisruptiv.de</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>KI/lokal nutzt das Mikrofon für das Diktat im Chat.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>KI/lokal liest und erstellt auf deinen Wunsch Erinnerungen.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>KI/lokal wandelt dein Diktat auf dem Mac in Text um.</string>
+</dict>
+</plist>
