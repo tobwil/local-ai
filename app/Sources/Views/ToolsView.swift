@@ -83,7 +83,7 @@ private struct MCPServerRow: View {
                 Circle().fill(color(status)).frame(width: 8, height: 8)
                 Text(server.name).font(.callout.weight(.semibold))
                 if let plugin = server.plugin { Chip(text: plugin, systemImage: "puzzlepiece.extension") }
-                if server.type == "http" { Chip(text: "HTTP", tint: Theme.blue) }
+                if server.type == "http" { Chip(text: "HTTP", tint: Theme.sky) }
                 Text(server.summary)
                     .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 Spacer()

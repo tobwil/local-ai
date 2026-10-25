@@ -1,12 +1,52 @@
+import AppKit
 import SwiftUI
 
+/// KIsruptiv-CI (kisruptiv.de): Dunkelblau #274060, Hellblau #7590BF, Gold #FCC419.
+/// Im Dunkelmodus wird das Dunkelblau zum Hellblau angehoben, damit Text und Flächen lesbar bleiben.
 enum Theme {
-    static let violet = Color(red: 0.52, green: 0.36, blue: 1.0)
-    static let blue = Color(red: 0.16, green: 0.56, blue: 1.0)
-    static let teal = Color(red: 0.12, green: 0.78, blue: 0.72)
-    static let brand = LinearGradient(colors: [violet, blue], startPoint: .topLeading, endPoint: .bottomTrailing)
-    static let glow = LinearGradient(colors: [violet.opacity(0.35), blue.opacity(0.15), .clear],
+    static let navy = Color(red: 0x27 / 255, green: 0x40 / 255, blue: 0x60 / 255)
+    static let skyBlue = Color(red: 0x75 / 255, green: 0x90 / 255, blue: 0xBF / 255)
+    static let gold = Color(red: 0xFC / 255, green: 0xC4 / 255, blue: 0x19 / 255)
+
+    /// Hauptfarbe für Akzente und Text: Dunkelblau hell, Hellblau dunkel.
+    static let primary = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x93 / 255, green: 0xAB / 255, blue: 0xD6 / 255, alpha: 1)
+            : NSColor(srgbRed: 0x27 / 255, green: 0x40 / 255, blue: 0x60 / 255, alpha: 1)
+    })
+    static let sky = skyBlue
+    static let teal = Color(red: 0.12, green: 0.70, blue: 0.62)
+    /// Flächen (Buttons, Nutzer-Blasen): immer Dunkelblau → Hellblau, weiße Schrift.
+    static let brand = LinearGradient(colors: [navy, skyBlue], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static let glow = LinearGradient(colors: [skyBlue.opacity(0.30), gold.opacity(0.10), .clear],
                                      startPoint: .topLeading, endPoint: .bottomTrailing)
+}
+
+/// Wortmarke im Stil des KIsruptiv-Logos: kräftiges „KI“, dünner goldener Slash, leichtes Suffix.
+struct Wordmark: View {
+    var suffix = "lokal"
+    var size: CGFloat = 34
+
+    var body: some View {
+        HStack(alignment: .lastTextBaseline, spacing: 0) {
+            Text("KI").font(.system(size: size, weight: .black)).kerning(-size * 0.04)
+            Text("/").font(.system(size: size * 0.95, weight: .thin)).foregroundStyle(Theme.gold)
+            Text(suffix).font(.system(size: size * 0.66, weight: .light))
+        }
+        .foregroundStyle(Theme.primary)
+        .accessibilityLabel("KI \(suffix)")
+    }
+}
+
+/// Original-Logo „KI/sruptiv“ (Marke von KIsruptiv), eingefärbt.
+struct KisruptivLogo: View {
+    var height: CGFloat = 18
+    var body: some View {
+        Image("KisruptivLogo").renderingMode(.template).resizable().scaledToFit()
+            .frame(height: height)
+            .foregroundStyle(Theme.primary)
+            .accessibilityLabel("KIsruptiv")
+    }
 }
 
 struct Card<Content: View>: View {
@@ -66,7 +106,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(.white)
             .padding(.horizontal, 20).padding(.vertical, 11)
             .background(Theme.brand, in: Capsule())
-            .shadow(color: Theme.violet.opacity(0.35), radius: configuration.isPressed ? 2 : 10, y: 4)
+            .shadow(color: Theme.primary.opacity(0.35), radius: configuration.isPressed ? 2 : 10, y: 4)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.spring(duration: 0.2), value: configuration.isPressed)
     }

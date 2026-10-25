@@ -7,6 +7,28 @@ enum Main {
         if CommandLine.arguments.contains("--selftest") {
             SelfTest.run()
         }
+        if let i = CommandLine.arguments.firstIndex(of: "--snapshot") {
+            let dir = CommandLine.arguments.count > i + 1 ? CommandLine.arguments[i + 1] : NSTemporaryDirectory()
+            _ = NSApplication.shared
+            MainActor.assumeIsolated { Snapshot.run(to: URL(fileURLWithPath: dir)) }
+            exit(0)
+        }
+        if CommandLine.arguments.contains("--install-engine") {
+            // Headless-Installation (Ziel per LOCALAI_ENGINE_PREFIX änderbar), z. B. für Tests und Skripte.
+            Task { @MainActor in
+                let installer = EngineInstaller()
+                installer.install()
+                var printed = 0
+                while installer.running || installer.finished == nil {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    for line in installer.log.dropFirst(printed) { print(line) }
+                    printed = installer.log.count
+                }
+                print(installer.step)
+                exit(installer.finished == true ? 0 : 1)
+            }
+            dispatchMain()
+        }
         if CommandLine.arguments.contains("--mcp-server") {
             MCPServerMode.run()
             exit(0)
@@ -29,7 +51,7 @@ struct LocalAIApp: App {
     private let app = AppState.shared
 
     var body: some Scene {
-        Window("Local AI", id: "main") {
+        Window("KI/lokal", id: "main") {
             ContentView()
                 .environment(app)
                 .frame(minWidth: 1000, minHeight: 660)

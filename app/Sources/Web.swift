@@ -194,7 +194,7 @@ enum HTMLText {
 
 /// Minimaler Keychain-Zugriff für API-Schlüssel.
 enum Keychain {
-    private static let service = "de.tobwil.localai"
+    private static let service = "de.kisruptiv.kilokal"
 
     static func set(_ key: String, _ value: String) {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,

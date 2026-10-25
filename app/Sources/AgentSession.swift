@@ -9,6 +9,8 @@ struct AgentContext {
     var customInstructions: String
     var maxSteps: Int
     var maxTokens: Int
+    /// MTP-Spekulation für diese Aufgabe (bei "Automatisch" nur für Code).
+    var mtp = true
 }
 
 /// Ein Gespräch mit dem lokalen Modell. Im Agent-Modus darf das Modell Werkzeuge aufrufen;
@@ -54,6 +56,8 @@ final class AgentSession {
     private(set) var liveTokPerSec: Double = 0
     private(set) var chatID = UUID().uuidString
     private(set) var historyVersion = 0
+    /// Wird nach jeder fertigen Antwort mit deren Text aufgerufen (z. B. zum Vorlesen).
+    var onFinish: ((String) -> Void)?
 
     var workspace: URL {
         didSet { UserDefaults.standard.set(workspace.path, forKey: "workspace") }
@@ -121,6 +125,7 @@ final class AgentSession {
             isRunning = false
             liveTokPerSec = 0
             save()
+            if !Task.isCancelled, case let .assistant(text, _, _)? = items.last?.kind, !text.isEmpty { onFinish?(text) }
         }
     }
 
@@ -142,6 +147,9 @@ final class AgentSession {
             - Anleitungen für Claude Code nennen Werkzeuge wie Read, Write, Edit, Bash, Grep, Glob, WebFetch, WebSearch, Task – \
             nutze dafür read_file, write_file, edit_file, run_shell, search_files, find_files, fetch_url, web_search, run_agent.
             """
+            if tools.contains(where: { $0.name == "calendar_events" }) {
+                s += "\n- Kalender/Erinnerungen/Kontakte/Mail: Zeiten immer als ISO in Ortszeit (\(TimeZone.current.identifier)). Mails nur als Entwurf (mail_draft)."
+            }
             if tools.contains(where: { $0.name == "browser_read" }) {
                 s += "\n- Browser des Nutzers: erst browser_tabs/browser_read, dann mit den Nummern [n] browser_click/browser_type. Nach jeder Aktion den neuen Zustand prüfen. Keine Käufe, Zahlungen, Logins oder Nachrichten ohne ausdrückliche Bitte des Nutzers."
             }
@@ -185,7 +193,7 @@ final class AgentSession {
 
             do {
                 for try await ev in LLMClient.stream(model: model, messages: history, tools: specs,
-                                                     thinking: thinking, maxTokens: context.maxTokens) {
+                                                     thinking: thinking, maxTokens: context.maxTokens, mtp: context.mtp) {
                     switch ev {
                     case let .content(c): text += c
                     case let .reasoning(r): thought += r

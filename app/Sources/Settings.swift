@@ -38,6 +38,9 @@ final class AppSettings {
     /// Browser-Steuerung über JXA (aus, bis der Nutzer sie einschaltet).
     var browserEnabled: Bool { didSet { UserDefaults.standard.set(browserEnabled, forKey: "browserEnabled") } }
     var browserApp: String { didSet { UserDefaults.standard.set(browserApp, forKey: "browserApp") } }
+    var readAloud: Bool { didSet { UserDefaults.standard.set(readAloud, forKey: "readAloud") } }
+    /// Kalender, Erinnerungen, Kontakte, Mail.
+    var pimEnabled: Bool { didSet { UserDefaults.standard.set(pimEnabled, forKey: "pimEnabled") } }
 
     init() {
         let d = UserDefaults.standard
@@ -56,6 +59,8 @@ final class AppSettings {
         expertModel = d.string(forKey: "expertModel") ?? ""
         browserEnabled = d.bool(forKey: "browserEnabled")
         browserApp = d.string(forKey: "browserApp") ?? "Brave Browser"
+        readAloud = d.bool(forKey: "readAloud")
+        pimEnabled = d.bool(forKey: "pimEnabled")
     }
 }
 

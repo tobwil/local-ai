@@ -23,7 +23,7 @@ enum SystemTools {
             AgentTool(name: "notify", description: "Zeigt eine macOS-Mitteilung, z. B. wenn eine lange Aufgabe fertig ist.",
                       parameters: schema([("title", "string", "Titel"), ("message", "string", "Text")], required: ["message"]),
                       needsApproval: false, source: "Mac") { args in
-                let title = args["title"] as? String ?? "Local AI"
+                let title = args["title"] as? String ?? "KI/lokal"
                 let msg = try BuiltinTools.string(args, "message")
                 let script = "display notification \(appleScriptString(msg)) with title \(appleScriptString(title))"
                 _ = try await Shell.exec(["/usr/bin/osascript", "-e", script], cwd: Paths.home)

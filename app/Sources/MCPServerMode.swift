@@ -1,6 +1,6 @@
 import Foundation
 
-/// `Local AI --mcp-server`: stellt das lokale Modell als MCP-Server über stdio bereit,
+/// `KI lokal --mcp-server`: stellt das lokale Modell als MCP-Server über stdio bereit,
 /// damit Claude Code, Claude Desktop oder andere MCP-Clients Aufgaben daran abgeben können.
 /// Voraussetzung: oMLX läuft (in der App gestartet oder per tools/serve.sh).
 enum MCPServerMode {
@@ -31,7 +31,7 @@ enum MCPServerMode {
         case "initialize":
             return ["protocolVersion": params["protocolVersion"] as? String ?? "2025-06-18",
                     "capabilities": ["tools": [:]],
-                    "serverInfo": ["name": "local-ai", "version": "0.1.0"],
+                    "serverInfo": ["name": "ki-lokal", "version": "0.3.0"],
                     "instructions": "Lokales LLM auf diesem Mac (oMLX). Gut für Zusammenfassungen, Entwürfe, Code-Umbauten und alles, was den Rechner nicht verlassen soll."]
         case "ping":
             return [:]
@@ -63,7 +63,7 @@ enum MCPServerMode {
         do {
             models = try await LLMClient.models()
         } catch {
-            throw ToolError.invalid("Der lokale Server läuft nicht – starte ihn in der App Local AI (oder mit tools/serve.sh).")
+            throw ToolError.invalid("Der lokale Server läuft nicht – starte ihn in der App KI/lokal (oder mit tools/serve.sh).")
         }
         switch name {
         case "local_models":

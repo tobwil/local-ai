@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var testing = false
     @State private var cloudNote: String?
     @State private var browserTest: String?
+    @State private var gpuNote: String?
 
     private func refresh(anthropic: Bool) {
         Task {
@@ -48,6 +49,12 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Kalender, Erinnerungen, Kontakte & Mail") {
+                Toggle("Agent darf Termine, Erinnerungen, Kontakte und Mail nutzen", isOn: $settings.pimEnabled)
+                Text("Lesen läuft direkt, Termine/Erinnerungen anlegen und Mail-Entwürfe nur nach Freigabe. Mails werden nie selbst verschickt – der Agent legt einen Entwurf an, du sendest. macOS fragt beim ersten Zugriff nach.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             Section("Browser-Steuerung") {
                 Toggle("Agent darf meinen Browser steuern", isOn: $settings.browserEnabled)
                 if settings.browserEnabled {
@@ -57,7 +64,7 @@ struct SettingsView: View {
                     Text("""
                     Einmalig einrichten: im Browser „JavaScript von Apple Events erlauben“ einschalten \
                     (Chrome/Brave/Edge: Ansicht → Entwickler; Safari: Einstellungen → Erweitert → Entwickler-Menü, dann Entwickler-Menü). \
-                    macOS fragt beim ersten Zugriff, ob Local AI den Browser steuern darf. \
+                    macOS fragt beim ersten Zugriff, ob KI/lokal den Browser steuern darf. \
                     Lesen und Scrollen laufen direkt, Öffnen, Klicken und Tippen nur nach deiner Freigabe im Chat.
                     """)
                     .font(.caption).foregroundStyle(.secondary)
@@ -136,10 +143,47 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            Section("Über") {
+                HStack(spacing: 14) {
+                    Wordmark(size: 26)
+                    Spacer()
+                    KisruptivLogo(height: 20)
+                }
+                Text("KI/lokal ist ein Tool von KIsruptiv: KI und Automatisierung verständlich, wirksam und für alle nutzbar machen – hier ganz privat auf deinem Mac.")
+                    .font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    Link("kisruptiv.de", destination: URL(string: "https://kisruptiv.de")!)
+                    Spacer()
+                    Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–") · Engine oMLX (Apache 2.0)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
             Section("Engine") {
+                HStack {
+                    Text(app.server.engineInstalled ? "oMLX eingerichtet (\(EngineInstaller.omlxCommit.prefix(7)) + MTP-Patch)" : "oMLX fehlt")
+                    Spacer()
+                    Button(app.server.engineInstalled ? "Neu einrichten / reparieren" : "Engine einrichten") { app.installer.install() }
+                        .disabled(app.installer.running)
+                }
+                if app.installer.running || app.installer.finished != nil {
+                    Text(app.installer.step).font(.caption).foregroundStyle(.secondary)
+                }
                 LabeledContent("oMLX", value: Paths.omlx.path)
                 LabeledContent("Modelle", value: Paths.models.path)
                 LabeledContent("Speichergrenze", value: String(format: "%.1f GiB", app.server.memoryCeilingGiB))
+                LabeledContent("GPU-Limit von macOS", value: app.hardware.gpuLimitGB.gb)
+                HStack {
+                    Button("GPU-Speicher auf \(app.recommendedGPULimitMB / 1024) GB erhöhen …") {
+                        Task { gpuNote = await app.setGPULimit(mb: app.recommendedGPULimitMB) ?? "Erhöht – gilt bis zum nächsten Neustart." }
+                    }
+                    Button("Zurücksetzen") {
+                        Task { gpuNote = await app.setGPULimit(mb: 0) ?? "Standard wiederhergestellt." }
+                    }
+                }
+                Text("Mehr GPU-Speicher erlaubt 64k Kontext und größere Modelle. macOS fragt nach deinem Passwort; die Einstellung gilt bis zum Neustart. Dann bleibt weniger Speicher für andere Apps.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let gpuNote { Text(gpuNote).font(.caption).foregroundStyle(.secondary) }
                 LabeledContent("Adresse", value: Paths.openAIBase.absoluteString)
             }
         }

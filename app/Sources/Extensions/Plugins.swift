@@ -115,7 +115,7 @@ final class PluginManager {
         let dirs = (try? fm.contentsOfDirectory(at: Self.pluginsDir, includingPropertiesForKeys: nil)) ?? []
         plugins = dirs.compactMap { Plugin.load($0, enabled: !disabled.contains($0.lastPathComponent)) }
             .sorted { $0.name < $1.name }
-        ownSkills = Skill.load(in: Self.skillsDir, source: "Local AI")
+        ownSkills = Skill.load(in: Self.skillsDir, source: "KI/lokal")
         claudeSkills = Skill.load(in: Self.claudeSkillsDir, source: "Claude Code")
         claudeCommands = SlashCommand.load(in: Self.claudeCommandsDir, source: "Claude Code")
         loadMarketplaces()

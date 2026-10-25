@@ -41,6 +41,7 @@ final class ServerController {
             return
         }
         try? FileManager.default.createDirectory(at: Paths.models, withIntermediateDirectories: true)
+        ModelSettingsStore.tuneServerSettings()
 
         let p = Process()
         p.executableURL = Paths.omlx

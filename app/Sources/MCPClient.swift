@@ -150,7 +150,7 @@ class MCPRPCBase: @unchecked Sendable {
     static let initializeParams: [String: Any] = [
         "protocolVersion": "2025-06-18",
         "capabilities": [:],
-        "clientInfo": ["name": "Local AI", "version": "0.2.0"],
+        "clientInfo": ["name": "KI/lokal", "version": "0.3.0"],
     ]
 
     static func parseTools(_ result: [String: Any]) -> [MCPTool] {

@@ -93,8 +93,8 @@ struct CompareView: View {
                     Text("Ornith 1.5 35B auf deinem Mac erreicht bei Coding-Benchmarks etwa das Niveau von GPT-5.5 und liegt deutlich hinter Claude Opus 5/5.5. Bei sehr schwerem Wissen (HLE) ist der Abstand am größten. Für Alltag, Coding und Agenten mit Werkzeugen reicht es oft – und es läuft privat und ohne Kosten.")
                         .foregroundStyle(.secondary)
                     HStack(spacing: 14) {
-                        legend(.local, Theme.violet)
-                        legend(.openFrontier, Theme.teal)
+                        legend(.local, Theme.gold)
+                        legend(.openFrontier, Theme.sky)
                         legend(.frontier, .gray)
                     }
                     .font(.caption)
@@ -105,19 +105,7 @@ struct CompareView: View {
                             Text(bench.name).font(.headline)
                             Text(bench.what).font(.caption).foregroundStyle(.secondary)
                         }
-                        Chart(bench.scores.sorted { $0.value > $1.value }) { s in
-                            BarMark(x: .value("Punkte", s.value), y: .value("Modell", s.model))
-                                .foregroundStyle(by: .value("Gruppe", s.group))
-                                .annotation(position: .trailing) {
-                                    Text(String(format: "%.1f", s.value)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                                }
-                        }
-                        .chartForegroundStyleScale([BenchmarkData.Group.local: Theme.violet,
-                                                    BenchmarkData.Group.openFrontier: Theme.teal,
-                                                    BenchmarkData.Group.frontier: Color.gray])
-                        .chartLegend(.hidden)
-                        .chartXScale(domain: 0...100)
-                        .frame(height: CGFloat(bench.scores.count) * 26 + 20)
+                        CompareChart(bench: bench)
                     }
                 }
                 Card {
@@ -138,5 +126,25 @@ struct CompareView: View {
             RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 12, height: 12)
             Text(g.rawValue)
         }
+    }
+}
+
+
+struct CompareChart: View {
+    let bench: BenchmarkData.Benchmark
+    var body: some View {
+        Chart(bench.scores.sorted { $0.value > $1.value }) { s in
+            BarMark(x: .value("Punkte", s.value), y: .value("Modell", s.model))
+                .foregroundStyle(by: .value("Gruppe", s.group))
+                .annotation(position: .trailing) {
+                    Text(String(format: "%.1f", s.value)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                }
+        }
+        .chartForegroundStyleScale([BenchmarkData.Group.local: Theme.gold,
+                                    BenchmarkData.Group.openFrontier: Theme.sky,
+                                    BenchmarkData.Group.frontier: Color.gray])
+        .chartLegend(.hidden)
+        .chartXScale(domain: 0...100)
+        .frame(height: CGFloat(bench.scores.count) * 26 + 20)
     }
 }

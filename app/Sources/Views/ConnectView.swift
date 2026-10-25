@@ -10,16 +10,16 @@ struct ConnectView: View {
             VStack(alignment: .leading, spacing: 18) {
                 ConnectCard(icon: "terminal", title: "Claude Code mit lokalem Modell",
                             text: "Claude Code spricht direkt mit oMLX über die Anthropic-API. Läuft komplett offline.",
-                            snippet: "ANTHROPIC_BASE_URL=\(Paths.server.absoluteString) ANTHROPIC_AUTH_TOKEN=local-ai \\\n  claude --model \(model)")
+                            snippet: "ANTHROPIC_BASE_URL=\(Paths.server.absoluteString) ANTHROPIC_AUTH_TOKEN=ki-lokal \\\n  claude --model \(model)")
 
                 ConnectCard(icon: "point.3.connected.trianglepath.dotted", title: "Lokales Modell als MCP-Werkzeug",
                             text: "Claude Code (oder ein anderer MCP-Client) bekommt das Werkzeug local_chat und kann Teilaufgaben an deinen Mac abgeben – Zusammenfassungen, Entwürfe, private Daten.",
-                            snippet: "claude mcp add local-ai -- \"\(exe)\" --mcp-server")
+                            snippet: "claude mcp add ki-lokal -- \"\(exe)\" --mcp-server")
 
                 ConnectCard(icon: "macwindow", title: "Claude Desktop / andere MCP-Clients",
                             text: "In claude_desktop_config.json unter mcpServers eintragen:",
                             snippet: """
-                            "local-ai": {
+                            "ki-lokal": {
                               "command": "\(exe)",
                               "args": ["--mcp-server"]
                             }
@@ -27,7 +27,7 @@ struct ConnectView: View {
 
                 ConnectCard(icon: "curlybraces", title: "OpenAI-kompatibel (OpenCode, Continue, Open WebUI, Skripte)",
                             text: "Basis-URL und Modell-ID – ein API-Schlüssel ist nicht nötig, viele Clients wollen trotzdem einen beliebigen Wert.",
-                            snippet: "Basis-URL: \(Paths.openAIBase.absoluteString)\nModell:    \(model)\nAPI-Key:   local-ai")
+                            snippet: "Basis-URL: \(Paths.openAIBase.absoluteString)\nModell:    \(model)\nAPI-Key:   ki-lokal")
 
                 if !app.server.state.isUp {
                     Label("Der Server muss laufen, damit diese Verbindungen funktionieren.", systemImage: "info.circle")

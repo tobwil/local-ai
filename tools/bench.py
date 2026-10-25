@@ -167,9 +167,12 @@ class MLXBackend:
 
 
 class HTTPBackend:
-    def __init__(self, base_url: str, model: str | None, no_think: bool, temp: float, api_key: str | None):
+    def __init__(self, base_url: str, model: str | None, no_think: bool, temp: float, api_key: str | None,
+                 mtp_off: bool = False):
         self.base = base_url.rstrip("/")
         self.headers = {"Content-Type": "application/json"}
+        if mtp_off:
+            self.headers["X-oMLX-MTP"] = "off"   # oMLX-Patch: MTP nur für diese Anfrage aus
         if api_key:
             self.headers["Authorization"] = f"Bearer {api_key}"
         self.model = model or self._first_model()
@@ -339,6 +342,7 @@ def main() -> None:
     h.add_argument("--base-url", default="http://127.0.0.1:8000/v1")
     h.add_argument("--model", help="Modell-ID (Standard: erstes aus /models)")
     h.add_argument("--api-key")
+    h.add_argument("--mtp-off", action="store_true", help="Header X-oMLX-MTP: off senden (MTP pro Anfrage aus)")
     common(h)
 
     sub.add_parser("report", help="Ergebnisse vergleichen")
@@ -355,7 +359,8 @@ def main() -> None:
 
     try:
         backend = (MLXBackend(args.model, args.draft, args.no_think, args.temp, args.prefill_step) if args.cmd == "mlx"
-                   else HTTPBackend(args.base_url, args.model, args.no_think, args.temp, args.api_key))
+                   else HTTPBackend(args.base_url, args.model, args.no_think, args.temp, args.api_key,
+                               getattr(args, "mtp_off", False)))
         samples = run_suite(args, backend)
     except urllib.error.URLError as e:
         sys.exit(f"Server nicht erreichbar ({args.base_url}): {e}")

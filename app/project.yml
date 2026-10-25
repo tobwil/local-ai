@@ -1,6 +1,6 @@
 name: LocalAI
 options:
-  bundleIdPrefix: de.tobwil
+  bundleIdPrefix: de.kisruptiv
   deploymentTarget:
     macOS: "15.0"
 settings:
@@ -16,20 +16,29 @@ targets:
       - path: Resources/Skills
         type: folder
         buildPhase: resources
+      - path: Resources/Assets.xcassets
+      - path: Resources/Engine
+        buildPhase: resources
     info:
       path: Resources/Info.plist
       properties:
-        CFBundleName: Local AI
-        CFBundleDisplayName: Local AI
-        CFBundleShortVersionString: "0.1.0"
+        CFBundleName: KI/lokal
+        CFBundleDisplayName: KI/lokal
+        CFBundleShortVersionString: "0.3.0"
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.developer-tools
-        NSHumanReadableCopyright: "MIT"
-        NSAppleEventsUsageDescription: "Local AI steuert auf deinen Wunsch deinen Browser (Tabs lesen, Seiten öffnen, klicken, tippen)."
+        NSHumanReadableCopyright: "© 2026 KIsruptiv · kisruptiv.de"
+        NSMicrophoneUsageDescription: "KI/lokal nutzt das Mikrofon für das Diktat im Chat."
+        NSSpeechRecognitionUsageDescription: "KI/lokal wandelt dein Diktat auf dem Mac in Text um."
+        NSCalendarsFullAccessUsageDescription: "KI/lokal liest und erstellt auf deinen Wunsch Termine."
+        NSRemindersFullAccessUsageDescription: "KI/lokal liest und erstellt auf deinen Wunsch Erinnerungen."
+        NSContactsUsageDescription: "KI/lokal sucht auf deinen Wunsch Kontakte (z. B. E-Mail-Adressen für Entwürfe)."
+        NSAppleEventsUsageDescription: "KI/lokal steuert auf deinen Wunsch deinen Browser (Tabs lesen, Seiten öffnen, klicken, tippen)."
     settings:
       base:
-        PRODUCT_NAME: Local AI
-        PRODUCT_BUNDLE_IDENTIFIER: de.tobwil.localai
+        PRODUCT_NAME: KI lokal
+        PRODUCT_BUNDLE_IDENTIFIER: de.kisruptiv.kilokal
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
         ENABLE_HARDENED_RUNTIME: NO

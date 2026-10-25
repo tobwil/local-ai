@@ -43,7 +43,7 @@ struct Skill: Identifiable, Hashable {
     let name: String
     let description: String
     let dir: URL
-    /// "Local AI", "Claude Code" oder der Plugin-Name.
+    /// "KI/lokal", "Claude Code" oder der Plugin-Name.
     let source: String
     var id: String { "\(source)/\(name)" }
     var file: URL { dir.appendingPathComponent("SKILL.md") }

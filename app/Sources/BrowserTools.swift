@@ -194,7 +194,7 @@ enum BrowserTools {
         guard p.terminationStatus == 0 else {
             let e = String(decoding: errData, as: UTF8.self)
             if e.contains("-1743") || e.contains("Not authorized") {
-                throw ToolError.invalid("macOS hat den Zugriff auf \(appName) verweigert – Systemeinstellungen → Datenschutz & Sicherheit → Automation → Local AI erlauben.")
+                throw ToolError.invalid("macOS hat den Zugriff auf \(appName) verweigert – Systemeinstellungen → Datenschutz & Sicherheit → Automation → KI/lokal erlauben.")
             }
             if e.contains("JavaScript") && e.contains("Apple") {
                 throw ToolError.invalid("Im Browser „JavaScript von Apple Events erlauben“ einschalten (Ansicht → Entwickler bzw. Safari → Entwickler).")

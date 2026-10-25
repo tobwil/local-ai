@@ -19,8 +19,9 @@ enum LLMClient {
 
     /// Streamt eine Antwort. `messages` und `tools` sind bereits im OpenAI-JSON-Format.
     /// Modell-IDs mit "anthropic:" bzw. "openai:" gehen an den jeweiligen Cloud-Anbieter.
+    /// `mtp: false` schickt `X-oMLX-MTP: off` – oMLX dekodiert diese Anfrage dann ohne Spekulation.
     static func stream(model modelID: String, messages: [[String: Any]], tools: [[String: Any]],
-                       thinking: Bool, maxTokens: Int = 4096) -> AsyncThrowingStream<Event, Error> {
+                       thinking: Bool, maxTokens: Int = 4096, mtp: Bool = true) -> AsyncThrowingStream<Event, Error> {
         let (endpoint, model) = Endpoint.resolve(modelID)
         if case let .anthropic(key, base) = endpoint {
             return AnthropicClient.stream(model: model, key: key, base: base, messages: messages, tools: tools,
@@ -47,6 +48,7 @@ enum LLMClient {
                     } else {
                         body["max_tokens"] = maxTokens
                         body["chat_template_kwargs"] = ["enable_thinking": thinking]
+                        if !mtp { req.setValue("off", forHTTPHeaderField: "X-oMLX-MTP") }
                     }
                     if !tools.isEmpty { body["tools"] = tools }
                     req.url = base.appendingPathComponent("chat/completions")

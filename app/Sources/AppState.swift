@@ -6,13 +6,15 @@ import Observation
 final class AppState {
     static let shared = AppState()
 
-    let hardware = Hardware.detect()
+    private(set) var hardware = Hardware.detect()
     let server = ServerController()
     let downloads = Downloads()
     let mcp = MCPManager()
     let plugins = PluginManager()
     let settings = AppSettings()
     let session = AgentSession()
+    let voice = VoiceController()
+    let installer = EngineInstaller()
 
     var selectedModelID: String {
         didSet { UserDefaults.standard.set(selectedModelID, forKey: "selectedModel") }
@@ -23,7 +25,7 @@ final class AppState {
     var useWebTools = true
 
     init() {
-        let hw = hardware
+        let hw = Hardware.detect()
         let rec = ModelCatalog.recommended(for: hw)
         selectedModelID = UserDefaults.standard.string(forKey: "selectedModel")
             ?? ModelCatalog.all.first { $0.isInstalled && $0.fits(hw) }?.id
@@ -32,6 +34,11 @@ final class AppState {
         let limitGiB = hw.gpuLimitGB * 1e9 / 1_073_741_824
         server.memoryCeilingGiB = ((limitGiB - 0.05) * 10).rounded(.down) / 10
         BundledSkills.installIfNeeded()
+        session.onFinish = { [weak self] text in
+            guard let self, self.settings.readAloud else { return }
+            self.voice.speak(text)
+        }
+        voice.onTranscript = { [weak self] text in self?.session.input = text }
         plugins.reload()
     }
 
@@ -69,6 +76,7 @@ final class AppState {
         if useWebTools { tools += BuiltinTools.web() }
         if settings.browserEnabled { tools += BrowserTools.all() }
         if useBuiltinTools { tools += SystemTools.all() }
+        if settings.pimEnabled { tools += PIMTools.all() }
         if !plugins.skills.isEmpty { tools.append(skillTool) }
         if !plugins.agents.isEmpty { tools.append(subAgentTool) }
         if !settings.expertModel.isEmpty { tools.append(expertTool) }
@@ -164,6 +172,23 @@ final class AppState {
         await mcp.setPluginServers(plugins.mcpServers)
     }
 
+    /// GPU-Speichergrenze anheben (macOS fragt nach dem Administrator-Passwort; gilt bis zum Neustart).
+    /// `mb == 0` setzt den Standard wieder her.
+    func setGPULimit(mb: Int) async -> String? {
+        let script = "do shell script \"/usr/sbin/sysctl iogpu.wired_limit_mb=\(mb)\" with administrator privileges"
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error { return error[NSAppleScript.errorMessage] as? String ?? "Abgebrochen" }
+        hardware = Hardware.detect()
+        let limitGiB = hardware.gpuLimitGB * 1e9 / 1_073_741_824
+        server.memoryCeilingGiB = ((limitGiB - 0.05) * 10).rounded(.down) / 10
+        if server.state == .running { await server.restart() }
+        return nil
+    }
+
+    /// Empfohlener Wert: ~83 % des Arbeitsspeichers für die GPU (24 GB → 20 GB), Rest für macOS.
+    var recommendedGPULimitMB: Int { Int(Double(hardware.memoryGiB) * 1024 * 0.83) }
+
     func download(_ model: ModelInfo) {
         downloads.start(model) { [weak self] in
             self?.installGeneration += 1
@@ -186,7 +211,14 @@ final class AppState {
     private(set) var lastRoute: (topic: ModelRouter.Topic, model: String)?
 
     func send() {
-        session.send(model: routedModel(), tools: agentTools, context: agentContext)
+        if voice.isListening { voice.stopListening() }
+        let model = routedModel()
+        var context = agentContext
+        // MTP "Automatisch": nur bei Code-Aufgaben spekulieren (Header X-oMLX-MTP).
+        if ModelSettingsStore.acceleration(for: model) == .auto {
+            context.mtp = ModelRouter.classify(session.input, hasImages: false, isCommand: session.input.hasPrefix("/")) == .code
+        }
+        session.send(model: model, tools: agentTools, context: context)
     }
 
     /// Ohne Router: das gewählte Modell. Mit Router: das Modell für das Thema der Nachricht, sofern installiert.
@@ -209,6 +241,6 @@ final class AppState {
     }
 
     var appExecutablePath: String {
-        Bundle.main.executableURL?.path ?? "/Applications/Local AI.app/Contents/MacOS/Local AI"
+        Bundle.main.executableURL?.path ?? "/Applications/KI lokal.app/Contents/MacOS/KI lokal"
     }
 }

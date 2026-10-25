@@ -1,10 +1,13 @@
-# local-ai
+# KI/lokal
 
-Nahezu Frontier-Modelle lokal auf einem Mac mit Apple Silicon – schnell genug für den Alltag (Ziel: ≥ 40 tok/s).
-Inspiriert von [Strata](https://github.com/Niko1221/Strata), aber für Macs mit wenig Speicher gebaut.
+**KI für alle – direkt auf deinem Mac.** Ein Tool von [KIsruptiv](https://kisruptiv.de).
 
-Ziel ist eine Mac-App, mit der jeder ohne Terminal ein passendes Modell auswählen, laden und benutzen kann.
-Dieser Stand enthält die Werkzeuge und Messungen, auf denen die App aufbaut.
+KI/lokal holt nahezu Frontier-Modelle auf Macs mit Apple Silicon – privat, offline, ohne Abo und schnell genug
+für den Alltag (≥ 40 tok/s). Inspiriert von [Strata](https://github.com/Niko1221/Strata), aber für Macs mit wenig
+Speicher gebaut: Die App erkennt die Hardware, empfiehlt das passende Modell, richtet die Engine ein und bringt einen
+Agenten mit Werkzeugen, Skills, Plugins, MCP, Browser-Steuerung, Sprache und Vision mit.
+
+Das Logo „KI/sruptiv“ ist eine Marke von KIsruptiv. Engine: [oMLX](https://github.com/jundot/omlx) (Apache 2.0).
 
 ## Ergebnis auf dem MacBook Air M4 (24 GB, 120 GB/s)
 
@@ -63,20 +66,21 @@ tools/serve.sh
 ~/.strata-lite/venv/bin/python tools/bench.py report
 ```
 
-## Mac-App „Local AI“ (`app/`)
+## Mac-App „KI/lokal“ (`app/`)
 
-SwiftUI-App für macOS 15+, die oMLX im Hintergrund steuert.
+SwiftUI-App für macOS 15+ im KIsruptiv-Design (Dunkelblau `#274060`, Hellblau `#7590BF`, Gold `#FCC419`),
+die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
 
 | Bereich | Was er kann |
 |---|---|
-| **Übersicht** | erkennt Chip, RAM, GPU-Limit, Bandbreite und SSD, empfiehlt das passende Modell, zeigt erwartete tok/s |
-| **Agent** | Chat mit Streaming und Live-tok/s, Bilder anhängen (Vision), Slash-Befehle, Verlauf; Werkzeuge mit Freigabe für Schreiben/Shell/MCP/Cloud |
+| **Übersicht** | erkennt Chip, RAM, GPU-Limit, Bandbreite und SSD, empfiehlt das passende Modell, zeigt erwartete tok/s; richtet die Engine per Klick ein |
+| **Agent** | Chat mit Streaming und Live-tok/s, Diktat und Vorlesen, Bilder anhängen (Vision), Slash-Befehle, Verlauf; Werkzeuge mit Freigabe oder YOLO |
 | **Modelle** | Katalog (Ornith, Qwen 3.6 Vision, Gemma 4, LFM2.5, Mellum), lokal gefundene Modelle, Cloud-Modelle; **Hugging-Face-Browser** mit Bewertung „läuft gut / langsam / knapp / zu groß“, tok/s-Schätzung und Prüfung, ob die installierte Engine die Architektur kennt |
 | **Vergleich** | Benchmarks der lokalen Modelle gegen Claude Opus 5/5.5, GPT-5.5, Gemini (Herstellerangaben, Stand 25.10.2026, mit Quellen) |
 | **Skills & Plugins** | Claude-Code-Format: Skills (`SKILL.md`), Plugins mit Befehlen, Sub-Agenten und MCP; Katalog aus Marketplaces (offizieller Anthropic-Katalog, eigene per Git), Installation per Klick |
 | **Werkzeuge & MCP** | MCP-Client für stdio- und HTTP-Server (Format wie Claude Desktop, Import, Vorlagen, `${VAR}`-Ersetzung) |
 | **Verbinden** | Claude Code / Claude Desktop / OpenAI-kompatible Clients; die App selbst als MCP-Server (`--mcp-server`) |
-| **Einstellungen** | YOLO-Modus + Notbremse, Browser-Steuerung, Websuche (DuckDuckGo, SearXNG, Brave), Modell-Router nach Thema, Cloud-Anbieter (Anthropic, OpenAI-kompatibel), Experte für `ask_expert`, eigene Anweisungen |
+| **Einstellungen** | YOLO-Modus + Notbremse, Browser-Steuerung, Kalender/Erinnerungen/Kontakte/Mail, GPU-Speicher erhöhen, Engine einrichten, Websuche (DuckDuckGo, SearXNG, Brave), Modell-Router nach Thema, Cloud-Anbieter (Anthropic, OpenAI-kompatibel), Experte für `ask_expert`, eigene Anweisungen |
 
 **Werkzeuge des Agenten:**
 
@@ -86,6 +90,7 @@ SwiftUI-App für macOS 15+, die oMLX im Hintergrund steuert.
 | Web | `web_search`, `fetch_url`, `http_request` (GET/POST/PUT/PATCH/DELETE) |
 | Dein Browser | `browser_tabs`, `browser_open`, `browser_read`, `browser_click`, `browser_type`, `browser_scroll`, `browser_back` – Brave, Chrome, Edge, Arc, Safari über JavaScript for Automation |
 | Mac | `clipboard_read`, `clipboard_write`, `notify` |
+| Kalender & Co. | `calendar_events`, `calendar_create`, `reminders_list`, `reminders_create`, `contacts_search`, `mail_recent`, `mail_draft` (nur Entwürfe, nie selbst senden) |
 | Gedächtnis | `remember`, `forget` – gilt in allen Gesprächen (`~/.strata-lite/memory.md`) |
 | Agenten | `use_skill`, `run_agent` (Sub-Agenten aus Plugins), `ask_expert` (Cloud-Briefing) |
 | MCP | alle Werkzeuge verbundener MCP-Server, Vorlagen u. a. Playwright und Chrome DevTools |
@@ -95,22 +100,34 @@ führt alles ohne Nachfrage aus. Die abschaltbare **Notbremse** fragt trotzdem b
 `curl … | sh`, Systembefehlen und beim Schreiben außerhalb des Benutzerordners.
 
 **Browser einrichten:** im Browser „JavaScript von Apple Events erlauben“ einschalten (Chrome/Brave/Edge: Ansicht → Entwickler;
-Safari: Entwickler-Menü), in Local AI unter Einstellungen → Browser-Steuerung einschalten; macOS fragt beim ersten Zugriff nach der Automation-Erlaubnis.
+Safari: Entwickler-Menü), in KI/lokal unter Einstellungen → Browser-Steuerung einschalten; macOS fragt beim ersten Zugriff nach der Automation-Erlaubnis.
 Mitgelieferte Skills: `web-recherche`, `code-review`, `dokumente-zusammenfassen`, `mac-helfer`, `skill-ersteller`.
 
 **Cloud ist optional:** Ohne API-Schlüssel bleibt alles auf dem Mac. Claude läuft über die Messages-API (`anthropic-version 2026-10-21`,
 adaptives Thinking, Thinking-Blöcke werden unverändert zurückgegeben, serverseitige Fallbacks bei Ablehnungen eingeschaltet).
 
+**Sprache:** Diktat über die Spracherkennung von macOS (auf dem Gerät, wenn verfügbar), Vorlesen mit der besten
+installierten Systemstimme – ohne zusätzliches Modell im knappen Speicher.
+
+**Tempo-Modus „Automatisch“:** MTP nur für Code-Aufgaben. Gemessen auf dem M4 Air: Chat 39 tok/s (ohne Spekulation),
+Code-Edit 82 tok/s (mit MTP) – pro Anfrage, ohne Neustart. Möglich durch den oMLX-Patch
+[`engine/patches/omlx-mtp-per-request.patch`](engine/patches/omlx-mtp-per-request.patch) (Header `X-oMLX-MTP: off`).
+
+**Langer Kontext:** KV-Kompression (TurboQuant, 4 Bit) pro Modell + angepasste Speicherwächter: auf 24 GB ~29k Tokens
+bei 32,7 tok/s statt Abbruch bei 32k. Mit „GPU-Speicher erhöhen“ (Passwortabfrage, gilt bis zum Neustart) mehr.
+
 ```bash
-app/Scripts/build.sh --run          # braucht Xcode und xcodegen (brew install xcodegen)
-"app/build/Local AI.app/Contents/MacOS/Local AI" --selftest   # ~19 Prüfungen, LOCALAI_TEST_VISION=1 zusätzlich Vision
+app/Scripts/build.sh --run                 # braucht Xcode und xcodegen (brew install xcodegen)
+app/Scripts/make-dmg.sh                    # signierte DMG (Developer ID, Hardened Runtime); NOTARY_PROFILE=… notarisiert
+"app/build/KI lokal.app/Contents/MacOS/KI lokal" --selftest        # Engine, Werkzeuge, MCP, Web, Router, Browser-Skripte …
+"app/build/KI lokal.app/Contents/MacOS/KI lokal" --install-engine  # oMLX ohne Oberfläche einrichten
+"app/build/KI lokal.app/Contents/MacOS/KI lokal" --mcp-server      # lokales Modell als MCP-Server
 ```
 
-Die App erwartet oMLX unter `~/.strata-lite/omlx-venv` (siehe Einrichtung oben) und legt Modelle, Skills, Plugins und Gespräche unter `~/.strata-lite/` ab.
+Daten liegen unter `~/.strata-lite/` (Engine, Modelle, Skills, Plugins, Gespräche, Gedächtnis).
 
 ## Nächste Schritte
 
-1. MTP pro Anfrage statt pro Modell (Patch für oMLX): 43 tok/s im Chat **und** ~78 tok/s bei Code ohne Neustart.
-2. oMLX in die App einbetten (wie dessen eigene App über venvstacks), signieren, als DMG verteilen.
-3. Sprache: Diktat und Vorlesen über mlx-audio (in oMLX schon enthalten).
-4. Langer Kontext (32k–64k) mit angehobenem GPU-Limit und KV-Quantisierung; Dauerlast-Test.
+1. MTP-Patch als Pull Request an oMLX geben, damit er ohne eigenen Patch funktioniert.
+2. Notarisierung einrichten (`xcrun notarytool store-credentials`) und DMG veröffentlichen.
+3. 64k Kontext mit angehobenem GPU-Limit messen; Dauerlast-Test auf dem lüfterlosen Air.

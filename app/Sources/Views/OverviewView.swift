@@ -10,6 +10,7 @@ struct OverviewView: View {
                 hero
                 HardwareGrid(hw: app.hardware)
                 fitList
+                KisruptivFooter()
             }
             .padding(24)
         }
@@ -32,22 +33,22 @@ struct OverviewView: View {
                         StatusDot(state: app.server.state)
                         Text(app.server.state.label).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                     }
-                    Text("KI auf deinem Mac.")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                    Wordmark(size: 46)
+                    Text("KI für alle – direkt auf deinem Mac.")
+                        .font(.system(size: 24, weight: .semibold))
                     Text("Privat, offline, ohne Abo – mit einem Modell, das zu deiner Hardware passt.")
                         .font(.title3).foregroundStyle(.secondary)
                     if let model {
                         HStack(spacing: 6) {
-                            Chip(text: model.name, systemImage: "cpu", tint: Theme.violet)
+                            Chip(text: model.name, systemImage: "cpu", tint: Theme.primary)
                             Chip(text: model.sizeGB.gb, systemImage: "internaldrive")
                             if model.isInstalled { Chip(text: "installiert", systemImage: "checkmark.seal.fill", tint: .green) }
                         }
                         .padding(.top, 4)
                     }
                     primaryAction.padding(.top, 10)
-                    if !app.server.engineInstalled {
-                        Text("oMLX nicht gefunden – erwartet unter \(Paths.omlx.path). Einrichtung siehe README.")
-                            .font(.caption).foregroundStyle(.red)
+                    if !app.server.engineInstalled || app.installer.running {
+                        EngineSetupCard()
                     }
                 }
                 Spacer(minLength: 0)
@@ -62,7 +63,7 @@ struct OverviewView: View {
         if let model {
             if let p = app.downloads.active[model.id] {
                 VStack(alignment: .leading, spacing: 6) {
-                    ProgressView(value: p.fraction).frame(maxWidth: 360).tint(Theme.violet)
+                    ProgressView(value: p.fraction).frame(maxWidth: 360).tint(Theme.primary)
                     Text("\(formatBytes(p.done)) von \(formatBytes(p.total)) · \(formatBytes(Int64(p.bytesPerSecond)))/s")
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
@@ -90,7 +91,7 @@ struct OverviewView: View {
                     Image(systemName: m.fits(app.hardware) ? "checkmark.circle.fill" : "xmark.circle")
                         .foregroundStyle(m.fits(app.hardware) ? .green : .secondary)
                     Text(m.name).fontWeight(m.id == app.recommended?.id ? .semibold : .regular)
-                    if m.id == app.recommended?.id { Chip(text: "Empfehlung", tint: Theme.violet) }
+                    if m.id == app.recommended?.id { Chip(text: "Empfehlung", tint: Theme.primary) }
                     Spacer()
                     Text(m.sizeGB.gb).foregroundStyle(.secondary).monospacedDigit()
                     Text(m.estimatedTokS(app.hardware).map { "~\(Int($0)) tok/s" } ?? "–")
@@ -154,5 +155,65 @@ struct HardwareGrid: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.separator.opacity(0.6)))
+    }
+}
+
+
+/// Absender: ein Tool von KIsruptiv.
+struct KisruptivFooter: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            KisruptivLogo(height: 22)
+            Divider().frame(height: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Ein Tool von KIsruptiv – KI verständlich, nutzbar und für alle.").font(.callout)
+                Text("Let’s disrupt the system together.").font(.caption).foregroundStyle(.secondary).italic()
+            }
+            Spacer()
+            Link("kisruptiv.de", destination: URL(string: "https://kisruptiv.de")!).font(.callout.weight(.medium))
+        }
+        .padding(16)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2).fill(Theme.gold).frame(width: 4).padding(.vertical, 14)
+        }
+    }
+}
+
+
+/// Einrichtung der Engine per Klick, mit Live-Protokoll.
+struct EngineSetupCard: View {
+    @Environment(AppState.self) private var app
+    @State private var showLog = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if app.installer.running {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text(app.installer.step).font(.callout)
+                }
+            } else if app.installer.finished == false {
+                Label(app.installer.step, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red)
+            } else {
+                Text("Die Engine (oMLX) ist noch nicht eingerichtet. Das erledigt KI/lokal für dich – ca. 5–10 Minuten, ohne Terminal.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            HStack {
+                Button { app.installer.install() } label: { Label("Engine einrichten", systemImage: "wrench.and.screwdriver.fill") }
+                    .buttonStyle(.borderedProminent).disabled(app.installer.running)
+                Button(showLog ? "Protokoll ausblenden" : "Protokoll") { showLog.toggle() }.buttonStyle(.borderless)
+            }
+            if showLog {
+                ScrollView {
+                    Text(app.installer.log.suffix(200).joined(separator: "\n"))
+                        .font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: 160)
+                .padding(8).background(.background, in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding(.top, 6)
     }
 }

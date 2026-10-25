@@ -53,9 +53,8 @@ private struct EmptyAgent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 12) {
-                Image(systemName: "sparkles").font(.system(size: 30)).foregroundStyle(Theme.brand)
                 VStack(alignment: .leading) {
-                    Text("Dein lokaler Agent").font(.title.bold())
+                    HStack(spacing: 8) { Wordmark(suffix: "agent", size: 28) }
                     Text("\(app.agentTools.count) Werkzeuge · \(app.plugins.skills.count) Skills · \(app.plugins.commands.count) Befehle – das Modell läuft auf diesem Mac").foregroundStyle(.secondary)
                 }
             }
@@ -63,7 +62,7 @@ private struct EmptyAgent: View {
                 ForEach(ideas, id: \.1) { icon, text in
                     Button { app.session.input = text } label: {
                         HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: icon).foregroundStyle(Theme.violet).frame(width: 18)
+                            Image(systemName: icon).foregroundStyle(Theme.primary).frame(width: 18)
                             Text(text).multilineTextAlignment(.leading).foregroundStyle(.primary)
                             Spacer(minLength: 0)
                         }
@@ -226,7 +225,7 @@ private struct Composer: View {
                 Spacer()
                 if session.isRunning && session.liveTokPerSec > 0 {
                     Label("\(session.liveTokPerSec.oneDecimal) tok/s", systemImage: "bolt.fill")
-                        .font(.caption.monospacedDigit()).foregroundStyle(Theme.violet)
+                        .font(.caption.monospacedDigit()).foregroundStyle(Theme.primary)
                         .contentTransition(.numericText())
                 }
                 if app.selectedIsCloud {
@@ -235,6 +234,10 @@ private struct Composer: View {
                 Text(app.selectedModelName).font(.caption).foregroundStyle(.secondary)
             }
             .controlSize(.small)
+
+            if let e = app.voice.error {
+                Label(e, systemImage: "mic.slash").font(.caption).foregroundStyle(.orange)
+            }
 
             if !session.attachments.isEmpty {
                 HStack(spacing: 8) {
@@ -294,6 +297,20 @@ private struct Composer: View {
                     .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(focused ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.separator), lineWidth: focused ? 1.5 : 1))
+                Button { app.voice.toggleListening(currentText: session.input) } label: {
+                    Image(systemName: app.voice.isListening ? "mic.fill" : "mic").font(.system(size: 20))
+                        .symbolEffect(.pulse, isActive: app.voice.isListening)
+                }
+                .buttonStyle(.plain).foregroundStyle(app.voice.isListening ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .help("Diktieren (auf dem Mac erkannt)")
+                Button {
+                    if app.voice.isSpeaking { app.voice.stopSpeaking() } else { app.settings.readAloud.toggle() }
+                } label: {
+                    Image(systemName: app.voice.isSpeaking ? "speaker.wave.3.fill" : (app.settings.readAloud ? "speaker.wave.2" : "speaker.slash"))
+                        .font(.system(size: 18))
+                }
+                .buttonStyle(.plain).foregroundStyle(app.settings.readAloud ? AnyShapeStyle(Theme.primary) : AnyShapeStyle(.secondary))
+                .help(app.voice.isSpeaking ? "Vorlesen stoppen" : "Antworten vorlesen an/aus")
                 Button { pickImages() } label: { Image(systemName: "photo.badge.plus").font(.system(size: 20)) }
                     .buttonStyle(.plain).foregroundStyle(.secondary).help("Bild anhängen (auch per Drag & Drop)")
                 if session.isRunning {

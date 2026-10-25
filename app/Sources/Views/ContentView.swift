@@ -42,6 +42,13 @@ struct ContentView: View {
             List(Screen.allCases, selection: $screen) { s in
                 Label(s.title, systemImage: s.icon).tag(s)
             }
+            .safeAreaInset(edge: .top) {
+                HStack {
+                    Wordmark(size: 22)
+                    Spacer()
+                }
+                .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 4)
+            }
             .navigationSplitViewColumnWidth(min: 190, ideal: 210)
             .safeAreaInset(edge: .bottom) { SidebarStatus() }
         } detail: {

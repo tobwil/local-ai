@@ -1,0 +1,71 @@
+{
+  "label": "Ornith-1.5-35B-A3B-oQ3e-mtp @ http://127.0.0.1:8000/v1",
+  "tag": "ornith-3bit-tq4-longctx",
+  "backend": "http",
+  "machine": {
+    "chip": "Apple M4",
+    "model": "Mac16,12",
+    "memory_gb": 24,
+    "macos": "26.6.2",
+    "gpu_wired_limit_mb": "0",
+    "power": "AC",
+    "low_power_mode": false
+  },
+  "args": {
+    "cmd": "http",
+    "base_url": "http://127.0.0.1:8000/v1",
+    "model": "Ornith-1.5-35B-A3B-oQ3e-mtp",
+    "workloads": "chat,context",
+    "contexts": "16k,32k,64k",
+    "max_tokens": 128,
+    "repeat": 1,
+    "temp": 0.0,
+    "no_think": true,
+    "sustain": 0,
+    "tag": "ornith-3bit-tq4-longctx"
+  },
+  "samples": [
+    {
+      "workload": "chat",
+      "target_ctx": 0,
+      "prompt_tokens": 68,
+      "gen_tokens": 128,
+      "ttft_s": 0.4854211669880897,
+      "prompt_tps": 140.08453817933417,
+      "decode_tps": 39.28738003450908,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 3931.56,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792956977.1925929
+    },
+    {
+      "workload": "context",
+      "target_ctx": 16384,
+      "prompt_tokens": 14333,
+      "gen_tokens": 128,
+      "ttft_s": 46.593093500006944,
+      "prompt_tps": 307.62069919220676,
+      "decode_tps": 35.23432292498322,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 3915.56,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792957027.430611
+    },
+    {
+      "workload": "context",
+      "target_ctx": 32768,
+      "prompt_tokens": 29114,
+      "gen_tokens": 128,
+      "ttft_s": 122.91047924989834,
+      "prompt_tps": 236.87158473124316,
+      "decode_tps": 32.72416147184988,
+      "peak_mem_gb": -1.0,
+      "swap_mb": 3859.56,
+      "thermal": "nominal",
+      "approx_tokens": false,
+      "t": 1792957154.245791
+    }
+  ]
+}

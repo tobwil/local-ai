@@ -171,7 +171,7 @@ private struct CatalogRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "puzzlepiece.extension").foregroundStyle(Theme.violet).padding(.top, 2)
+            Image(systemName: "puzzlepiece.extension").foregroundStyle(Theme.primary).padding(.top, 2)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(entry.name).font(.callout.weight(.semibold))
