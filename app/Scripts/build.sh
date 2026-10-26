@@ -1,5 +1,6 @@
 #!/bin/zsh
 # Baut "KI lokal.app" (KI/lokal) nach app/build/ und startet sie mit --run.
+# Mit --install: zusätzlich nach /Applications kopieren, dort für Links (kilokal://) anmelden und starten.
 set -euo pipefail
 cd "${0:A:h}/.."
 
@@ -19,6 +20,20 @@ LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchSe
 for stale in build/DerivedData/Build/Products/*/"KI lokal.app" build/dmg/"KI lokal.app"; do
   [[ -d "$stale" ]] && $LSREGISTER -u "$stale" 2>/dev/null || true
 done
+if [[ "${1:-}" == "--install" ]]; then
+  INSTALLED="/Applications/KI lokal.app"
+  # Laufende App beenden (sie stoppt dabei die Engine), dann ersetzen.
+  osascript -e 'tell application id "de.kisruptiv.kilokal" to quit' 2>/dev/null || true
+  for _ in {1..20}; do pgrep -qf "KI lokal.app/Contents/MacOS/KI lokal$" || break; sleep 0.5; done
+  rm -rf "$INSTALLED"
+  ditto "build/KI lokal.app" "$INSTALLED"
+  $LSREGISTER -u "build/KI lokal.app" 2>/dev/null || true
+  $LSREGISTER -f "$INSTALLED"
+  echo "→ installiert: $INSTALLED"
+  open "$INSTALLED"
+  exit 0
+fi
+
 $LSREGISTER -f "build/KI lokal.app"
 echo "→ $(pwd)/build/KI lokal.app"
 

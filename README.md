@@ -194,6 +194,7 @@ geöffnet – passen ~20k am Stück (2,5 min); lehnt der Speicherwächter ab, k�
 
 ```bash
 app/Scripts/build.sh --run                 # braucht Xcode und xcodegen (brew install xcodegen)
+app/Scripts/build.sh --install             # bauen, nach /Applications installieren und starten
 app/Scripts/make-dmg.sh                    # signierte DMG (Developer ID, Hardened Runtime); NOTARY_PROFILE=… notarisiert
 "app/build/KI lokal.app/Contents/MacOS/KI lokal" --selftest        # Engine, Werkzeuge, MCP, Web, Router, Browser-Skripte …
 "app/build/KI lokal.app/Contents/MacOS/KI lokal" --install-engine  # oMLX ohne Oberfläche einrichten
