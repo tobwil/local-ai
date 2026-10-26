@@ -109,6 +109,8 @@ final class AgentSession {
     @ObservationIgnored private var userTask = ""
     /// Namen der in diesem Auftrag erfolgreich genutzten Werkzeuge (für die Erkennung wiederholter Abläufe).
     @ObservationIgnored private var runTools: [String] = []
+    /// Die App wird gerade beendet: Ein laufender Auftrag bleibt als unterbrochen gespeichert (→ „Fortsetzen“).
+    @ObservationIgnored private var quitting = false
     /// Plan des Agenten (Markdown-Checkliste über update_plan); überdauert Verdichten und Neustarts.
     private(set) var plan = ""
     /// Planstand, der gerade im Systemprompt steht (nur beim Verdichten/Fortsetzen erneuert, siehe Checkpoint).
@@ -234,6 +236,14 @@ final class AgentSession {
         runTask = nil
         for (_, c) in approvals { c.resume(returning: false) }
         approvals.removeAll()
+    }
+
+    /// Beim Beenden der App (vor dem Stopp der Engine): Lief ein Auftrag, als unterbrochen speichern, damit der nächste
+    /// Start „Fortsetzen“ anbietet. Sonst scheiterte die laufende Anfrage am Engine-Stopp und der Lauf gälte als beendet.
+    func prepareForQuit() {
+        guard isRunning else { return }
+        quitting = true
+        save()
     }
 
     func approve(_ id: UUID, _ ok: Bool) {
@@ -505,7 +515,7 @@ final class AgentSession {
                     items.append(Item(kind: .error(Self.qualityPrefix + ": Verlauf war zu lang für den Speicher – ältere Schritte gekürzt, es geht weiter." + (memoryRetries == 2 ? " Tipp: „GPU-Speicher erhöhen“ in den Einstellungen gibt dem Modell deutlich mehr Platz." : ""))))
                     continue
                 }
-                if !Task.isCancelled { items.append(Item(kind: .error(message))) }
+                if !Task.isCancelled, !quitting { items.append(Item(kind: .error(message))) }
                 return
             }
 
@@ -904,7 +914,7 @@ final class AgentSession {
             }
         }
         ChatStore.save(id: chatID, ["title": title, "customTitle": customTitle ?? "", "angeheftet": angeheftet, "updated": Date().timeIntervalSince1970, "mode": mode.rawValue,
-                                    "project": project?.id.uuidString ?? "", "plan": plan, "laeuft": isRunning,
+                                    "project": project?.id.uuidString ?? "", "plan": plan, "laeuft": isRunning || quitting,
                                     "items": encoded, "history": history])
         historyVersion += 1
     }

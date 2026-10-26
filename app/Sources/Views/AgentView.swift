@@ -146,7 +146,7 @@ private struct InterruptedBanner: View {
             Image(systemName: "arrow.clockwise.circle.fill").font(.title2).foregroundStyle(Theme.gold)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Unterbrochener Auftrag: „\(entry.title)“").font(.callout.weight(.semibold))
-                Text("Die App wurde beendet, während der Agent daran arbeitete (\(entry.date.formatted(date: .abbreviated, time: .shortened))). Verlauf und Plan sind gespeichert.")
+                Text("Die App wurde beendet, während der Agent daran arbeitete (\(entry.date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(Locale(identifier: "de_DE"))))). Verlauf und Plan sind gespeichert.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
