@@ -2,6 +2,7 @@
 
 **KI für alle – direkt auf deinem Mac.** KI/lokal ist ein Tool von [KIsruptiv](https://kisruptiv.de): ein KI-Agent,
 der vollständig auf deinem Mac läuft – privat, offline, ohne Abo. Diese Anleitung zeigt jeden Bereich der App.
+Wofür es sich eignet, wo die Grenzen liegen und wie es sich von den Bezahl-Diensten abgrenzt: [Einordnung](EINORDNUNG.md).
 
 ![Übersicht](bilder/uebersicht.png)
 
@@ -117,6 +118,8 @@ Mitte wählst du *Ohne Projekt* oder ein Projekt; *Neues Projekt …* legt eins 
 öffnen“ –, Git-Zweig, Modell), **Starten** (z. B. „Spiel starten“ oder „Seite öffnen“ für `index.html`, sonst die
 Anleitung), **Kontext** (wie voll das 32k-Arbeitsgedächtnis ist; ab ~24k kürzt die App ältere Schritte), **Ausgaben** des Gesprächs und die zuletzt geänderten
 **Projektdateien** – ein Klick öffnet sie in der Vorschau. So findest du Ergebnisse, egal welches Gespräch offen ist.
+
+![Projekt-Leiste](bilder/agent-projekt.png)
 
 **Gesprächsliste** (Symbol links oben im Agent): alle Gespräche nach Datum, **Suche über alle Gespräche** (Titel und Inhalt),
 im Projekt nur dessen Gespräche (*Alle anzeigen* erweitert). Rechtsklick: **Anheften** (bleibt oben – z. B. das Haupt-Gespräch eines Projekts), **Umbenennen**, **Als Skill speichern**,
