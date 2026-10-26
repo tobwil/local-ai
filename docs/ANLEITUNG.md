@@ -194,6 +194,13 @@ Skills sind Anleitungen, die der Agent bei passenden Aufgaben selbst lädt (Form
 - **Aus Gesprächen lernen:** Nach einem gelungenen Ablauf *„Diesen Ablauf als Skill speichern“* oder Rechtsklick in der
   Gesprächsliste. Das Modell schreibt einen Entwurf (Wann verwenden, Schritte, Ergebnis prüfen, Stolperfallen), du prüfst
   und speicherst. Beim nächsten Mal weiß der Agent, wie es geht – ein persönliches Kochbuch.
+- **Wiederholungen erkennen:** Erledigt der Agent zum dritten Mal einen ähnlichen Auftrag (ähnliche Wörter, ähnliche
+  Werkzeuge), schlägt der Chat vor, daraus einen Skill zu machen – aus **allen** passenden Gesprächen zusammen, damit
+  die Anleitung den gemeinsamen Ablauf beschreibt statt eines Einzelfalls.
+- **Mitgeliefert:** `web-recherche`, `code-review`, `dokumente-zusammenfassen`, `mac-helfer`, `skill-ersteller` und – angelehnt an
+  [KiroCrew](https://github.com/kirodotdev/KiroCrew) – `ausfragen` (eine Entscheidung nach der anderen), `fehleranalyse`
+  (Ursache eines eigenen Fehlers statt Entschuldigung), `fuenf-warum` (geführtes Tiefbohren), `gummiente` (Bericht gegen
+  Quellen prüfen) und `perspektiven-rat` (Befürworter, Kritiker, Pragmatiker).
 - **Skills & Plugins:** mitgelieferte Skills, eigene Skills und Plugins aus Marketplaces (z. B. dem offiziellen
   Anthropic-Katalog) mit Befehlen, Sub-Agenten und MCP-Servern.
 
@@ -208,7 +215,32 @@ und **warum** gefragt wird. Wahl: *Ablehnen*, *Erlauben* oder *Für dieses Gespr
 - **YOLO** (🔥): keine Rückfragen – praktisch für längere Aufgaben.
 - **Notbremse** (an lassen!): fragt auch im YOLO-Modus bei `sudo`, `rm -rf`, Force-Push, Systembefehlen, Schreiben außerhalb
   deines Benutzerordners (auch per Terminal, z. B. in Homebrew-Ordnern) und Änderungen an systemweit installierten Paketen.
+- **Zugangsdaten:** Lesen von `~/.ssh`, `~/.aws`, `~/.gnupg`, dem Schlüsselbund & Co. fragt immer nach (auch bei sonst freien
+  Werkzeugen wie `read_file`). API-Schlüssel, Tokens und private Schlüssel in Werkzeug-Ergebnissen blendet die App aus –
+  sie landen weder im Verlauf des Modells noch im Protokoll.
+- **Sandbox** (Einstellungen → Agent): Shell-Befehle, die ohne deine Freigabe laufen (YOLO, Automationen, `--yolo` im
+  Terminal), laufen in der macOS-Sandbox. Schreiben geht dort nur im Arbeitsordner, in `/tmp` und in Cache-Ordnern;
+  Zugangsdaten sind gesperrt, Shell-Startdateien (`.zshrc` …), LaunchAgents und `~/.kilokal` geschützt. Was du einzeln
+  freigibst, läuft im Standard ohne Sandbox; wahlweise *Immer* oder *Aus*.
 - Jede Aktion steht im **Protokoll** (wer, was, freigegeben/YOLO/abgelehnt, Ergebnis).
+
+### Lektionen: aus Fehlern lernen
+
+Korrigierst du den Agenten („nein, das stimmt nicht“, „du hast die Tests vergessen“) oder behebt er im Qualitäts-Check
+einen Fehler, hält er die Regel dahinter mit `learn_lesson` fest – für dieses Projekt oder überall. Ab dann steht sie bei
+jeder Anfrage im Systemprompt. Gerade ein kleines Modell profitiert davon: Was einmal schiefging, passiert seltener wieder.
+Alle Lektionen siehst, ergänzt und löschst du unter **Einstellungen → Gedächtnis & Lektionen** (`~/.kilokal/lessons.json`).
+Fakten über dich (`remember`) bleiben getrennt davon in `~/.kilokal/memory.md`.
+
+### Lange Aufträge
+
+- **Plan:** Bei Aufträgen mit vielen Schritten legt der Agent mit `update_plan` eine Checkliste an und hakt ab. Wird der
+  Verlauf verdichtet, bleibt der Plan erhalten – der Agent verliert den Faden nicht.
+- **Dranbleiben:** Am Schrittlimit macht der Agent bis zu 2× (einstellbar bis 20×) von selbst weiter, statt auf
+  *Weitermachen* zu warten. Solange er arbeitet, schläft der Mac nicht ein. So lassen sich große Aufgaben über Nacht
+  erledigen – lokal kostet jeder Token nichts.
+- **Fortsetzen nach Neustart:** Der Stand wird nach jedem Schritt gespeichert. Wird die App mitten im Auftrag beendet
+  oder stürzt sie ab, bietet der Agent-Tab beim nächsten Start *Fortsetzen* an – Verlauf, Plan und Projekt sind wieder da.
 
 ## 10. Weitere Bereiche
 
@@ -219,6 +251,12 @@ und nennt die Quelle. Alles bleibt auf dem Mac.
 
 **Automationen:** Aufträge nach Zeitplan (Uhrzeit und Wochentage oder Intervall), z. B. das **Morgen-Briefing** mit
 Terminen, Erinnerungen, Mails, Wetter und Nachrichten – als Mitteilung, vorgelesen oder als Datei.
+
+**Überwachen ohne Modell:** Eine Automation kann zuerst einen Prüfbefehl ausführen (z. B. `curl` auf eine Webseite,
+`df` für den Speicherplatz). Der läuft im Takt ohne Modell – kostet kaum Strom und keinen Speicher. Nur wenn der
+Auslöser greift (*Ausgabe hat sich geändert*, *Befehl schlägt fehl*, *Befehl gibt etwas aus*), kommt eine Mitteilung –
+oder der Agent bekommt die Ausgabe (bei „geändert“ auch den vorherigen Stand) und wertet sie aus. Vorlagen:
+*Webseite beobachten*, *Dienst erreichbar?*, *Speicherplatz knapp*.
 
 ![Automationen](bilder/automationen.png)
 
@@ -241,6 +279,10 @@ Terminen, Erinnerungen, Mails, Wetter und Nachrichten – als Mitteilung, vorgel
   erreichbar.
 - **Verbinden:** fertige Befehle für Claude Code (lokales Modell statt Cloud), Claude Desktop und andere MCP-Clients
   (KI/lokal als MCP-Server) sowie OpenAI-kompatible Programme.
+- **KiroCrew:** [KiroCrew](https://github.com/kirodotdev/KiroCrew) ruft Modelle über die Agenten OpenCode oder Pi auf. Unter
+  *Verbinden* stehen die fertigen Einträge für `~/.config/opencode/opencode.json` bzw. `~/.pi/agent/models.json` (Basis-URL
+  `http://127.0.0.1:8000/v1`, Modell und Kontextgröße schon eingesetzt) und für `~/.kiro/crew/mcp.json`, damit KiroCrew
+  KI/lokal umgekehrt als Werkzeug nutzt. Hinweis: Diese Agenten schicken lange Systemprompts mit – auf 24 GB wird es eng.
 
 ![Verbinden](bilder/verbinden.png)
 
@@ -279,6 +321,7 @@ Weitere Schalter: `--weiter` (im offenen Gespräch weitermachen statt ein neues 
 | Modell passt nicht in den Speicher | andere Apps schließen, GPU-Speicher erhöhen oder kleineres Modell |
 | iPhone erreicht den Mac nicht | Heimnetz-Freigabe an? Engine in der App (neu) starten, gleiches WLAN |
 | Absturz | Die Übersicht bietet beim nächsten Start „Melden“ an (vorausgefülltes GitHub-Issue) |
-| Agent stoppt mit „Schrittlimit erreicht“ | **Weitermachen** klicken – oder in den Einstellungen mehr Schritte erlauben |
+| Agent stoppt mit „Schrittlimit erreicht“ | **Weitermachen** klicken – oder in den Einstellungen mehr Schritte bzw. öfter „von selbst weitermachen“ erlauben |
+| Shell-Befehl scheitert mit „Operation not permitted“ | Die Sandbox hat geschützt (YOLO/Automation). Befehl ohne YOLO einzeln freigeben oder Sandbox unter Einstellungen → Agent anpassen |
 
 ![Protokoll](bilder/protokoll.png)

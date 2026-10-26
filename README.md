@@ -82,14 +82,14 @@ die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
 |---|---|
 | **Übersicht** | erkennt Chip, RAM, GPU-Limit, Bandbreite und SSD, empfiehlt das passende Modell, zeigt erwartete tok/s; richtet die Engine per Klick ein; **Nutzung & Mac**: Tokens, Anfragen, Tempo, Cache-Treffer, Speicher und **Chip-Temperatur** live |
 | **Wissen** | eigene Ordner indexieren (Text, Markdown, PDF, Word, RTF, HTML, Code), Hybrid-Suche aus Stichwörtern und Bedeutung (Embeddings von macOS, auf dem Gerät), Quellenangabe |
-| **Automationen** | Aufträge nach Zeitplan (Uhrzeit + Wochentage oder Intervall), Vorlage **Morgen-Briefing**, Ergebnis als Mitteilung, vorgelesen oder Datei; Start bei Anmeldung |
+| **Automationen** | Aufträge nach Zeitplan (Uhrzeit + Wochentage oder Intervall), Vorlage **Morgen-Briefing**, Ergebnis als Mitteilung, vorgelesen oder Datei; **Überwachen ohne Modell**: Prüfbefehl im Takt, der Agent arbeitet nur, wenn sich etwas ändert, fehlschlägt oder gemeldet wird; Start bei Anmeldung |
 | **Agent** | ein Eingabefeld für alles; **Projekte** (Gespräche + Ordner + Anweisungen, Code-Projekte automatisch erkannt); **Gesprächsliste mit Volltextsuche**, Umbenennen; **Vorschau** (Seiten und Spiele live) und **formatierter Canvas**; Dateien anhängen (PDF, Word, Excel, PowerPoint, ZIP, Audio …); Dokumente erzeugen (PDF, Word, Excel); Arbeitsschritte kompakt in Klartext; **Gesprächsmodus**, Diktat, Vorlesen, Bildschirmfotos; Freigaben in Klartext oder YOLO |
 | **Assistenten** | Galerie fertiger Funktionen: **Transkribieren** (lokal), Meeting-Protokoll, Dokument zusammenfassen, Excel auswerten, Übersetzen, E-Mail beantworten, Recherche-Bericht …; eigene aus Gesprächen; als Automation nach Zeitplan |
 | **Modelle** | Katalog (Ornith, Qwen 3.6 Vision, Gemma 4, LFM2.5, Mellum), lokal gefundene Modelle, Cloud-Modelle; **Hugging-Face-Browser** mit Bewertung „läuft gut / langsam / knapp / zu groß“, tok/s-Schätzung und Prüfung, ob die installierte Engine die Architektur kennt |
 | **Vergleich** | lokale Modelle gegen GPT-6 Astra, GPT-6.1 Sol, GPT-5.5/5.6, Claude Opus 5/5.5, Fable 5.1, Mythos 5, Gemini 3.1 – SWE-bench Verified/Pro, Terminal-Bench, GPQA, HLE, ARC-AGI-2 (Stand 25.10.2026, mit Quellen) |
 | **Skills & Plugins** | Claude-Code-Format: Skills (`SKILL.md`), Plugins mit Befehlen, Sub-Agenten und MCP; Katalog aus Marketplaces (offizieller Anthropic-Katalog, eigene per Git), Installation per Klick |
 | **Werkzeuge & MCP** | MCP-Client für stdio- und HTTP-Server (Format wie Claude Desktop, Import, Vorlagen, `${VAR}`-Ersetzung) |
-| **Verbinden** | Claude Code / Claude Desktop / OpenAI-kompatible Clients; die App selbst als MCP-Server (`--mcp-server`) |
+| **Verbinden** | Claude Code / Claude Desktop / OpenAI-kompatible Clients; **KiroCrew** über OpenCode oder Pi (fertige Konfiguration); die App selbst als MCP-Server (`--mcp-server`) |
 | **Protokoll** | jede Werkzeug-Aktion des Agenten (Freigabe, YOLO, unbeaufsichtigt) in `~/.kilokal/logs/actions.jsonl`, dazu Engine- und MCP-Log |
 | **Einstellungen** | Heimnetz-Freigabe (iPhone per QR-Code), YOLO-Modus + Notbremse, Browser-Steuerung, Kalender/Erinnerungen/Kontakte/Mail, GPU-Speicher erhöhen, Engine einrichten, Websuche (DuckDuckGo, SearXNG, Brave), Modell-Router nach Thema, Cloud-Anbieter (Anthropic, OpenAI-kompatibel), Experte für `ask_expert`, eigene Anweisungen |
 
@@ -103,7 +103,8 @@ die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
 | Mac | `clipboard_read`, `clipboard_write`, `notify`, `look_at_screen` (Bildschirmfoto → Vision-Modell) |
 | Dokumente | `create_document` (PDF, Word, Excel, CSV, RTF, HTML aus Markdown), `open_canvas` (bearbeitbarer Canvas), `transcribe` (Audio/Video → Text, lokal) |
 | Kalender & Co. | `calendar_events`, `calendar_create`, `reminders_list`, `reminders_create`, `contacts_search`, `mail_recent`, `mail_draft` (nur Entwürfe, nie selbst senden) |
-| Gedächtnis & Wissen | `remember`, `forget` (`~/.kilokal/memory.md`), `search_documents` (eigene Ordner) |
+| Gedächtnis & Wissen | `remember`, `forget` (`~/.kilokal/memory.md`), `learn_lesson` (Lektionen, `~/.kilokal/lessons.json`), `search_documents` (eigene Ordner) |
+| Lange Aufträge | `update_plan` (Checkliste, bleibt beim Verdichten erhalten) |
 | Agenten | `use_skill`, `run_agent` (Sub-Agenten aus Plugins), `ask_expert` (Cloud-Briefing) |
 | MCP | alle Werkzeuge verbundener MCP-Server, Vorlagen u. a. Playwright und Chrome DevTools |
 
@@ -122,6 +123,12 @@ Arbeiten · Code).
   ursprünglichen Auftrag zurück und muss Fehler, fehlende Punkte und Tippfehler beheben.
 - **Längen- und Schrittlimit:** abgeschnittene Antworten werden in Teilen fortgesetzt; kurz vor dem Limit eine Erinnerung,
   danach „Weitermachen“.
+- **Lektionen:** Korrekturen des Nutzers und im Qualitäts-Check behobene Fehler werden mit `learn_lesson` zu dauerhaften
+  Regeln (global oder pro Projekt), die ab dann im Systemprompt stehen. Wiederholt sich ein Auftrag zum dritten Mal,
+  schlägt der Chat vor, aus allen passenden Gesprächen einen Skill zu machen.
+- **Lange Aufträge:** Zwischenstand nach jedem Schritt; nach Absturz oder Beenden *Fortsetzen* (offene Werkzeug-Aufrufe
+  werden ergänzt); Plan per `update_plan`, der beim Verdichten wieder eingespielt wird; am Schrittlimit bis zu N× von selbst
+  weiter, Mac bleibt wach.
 - **Projekttests:** Gibt es `tests/test_*.js|py`, führt der Qualitäts-Check sie vor „fertig“ aus – bei Rot bis zu dreimal.
 - **Typische Ausrutscher abgefangen:** bloße Ankündigungen ohne Werkzeug („Ich starte …“) und Rückfragen nach Inhalten, die
   der Agent selbst lesen kann, lösen eine Erinnerung aus; `replace_lines` ersetzt ganze Blöcke per Zeilennummer;
@@ -144,7 +151,10 @@ nicht (oder mit `--headless`), arbeitet der Agent ohne Oberfläche; die Notbrems
 
 **Freigaben & YOLO:** Schreiben, Shell, Browser-Aktionen, HTTP, MCP und Cloud brauchen eine Freigabe im Chat. Der **YOLO-Modus** (🔥 im Chat)
 führt alles ohne Nachfrage aus. Die abschaltbare **Notbremse** fragt trotzdem bei `sudo`, `rm -rf`, `git push --force`, `git reset --hard`,
-`curl … | sh`, Systembefehlen und beim Schreiben außerhalb des Benutzerordners.
+`curl … | sh`, Systembefehlen, beim Schreiben außerhalb des Benutzerordners und bei jedem Zugriff auf Zugangsdaten (`~/.ssh`,
+`~/.aws`, Schlüsselbund …). Shell-Befehle ohne Freigabe (YOLO, Automationen) laufen in einer **macOS-Sandbox**
+(`sandbox-exec`: Schreiben nur im Arbeitsordner, `/tmp` und Caches; Zugangsdaten gesperrt). API-Schlüssel und private
+Schlüssel in Werkzeug-Ergebnissen werden ausgeblendet, bevor sie in den Verlauf oder ins Protokoll gelangen.
 
 **Browser einrichten:** im Browser „JavaScript von Apple Events erlauben“ einschalten (Chrome/Brave/Edge: Ansicht → Entwickler;
 Safari: Entwickler-Menü), in KI/lokal unter Einstellungen → Browser-Steuerung einschalten; macOS fragt beim ersten Zugriff nach der Automation-Erlaubnis.

@@ -307,6 +307,41 @@ enum SelfTest {
             return "\(risky.count) gefährliche erkannt, \(safe.count) harmlose durchgelassen, Pfade geprüft"
         }) { failed += 1 }
 
+        if !(await check("Shell-Sandbox") {
+            guard ShellSandbox.available else { return "sandbox-exec fehlt – übersprungen" }
+            let probe = Paths.home.appendingPathComponent(".kilokal-sandbox-probe-\(UUID().uuidString)")
+            let out = try await Shell.run("touch drinnen.txt && echo ok; touch \(probe.path) 2>&1; cat ~/.ssh/known_hosts 2>&1 | head -1",
+                                          cwd: tmp, sandboxed: true)
+            defer { try? FileManager.default.removeItem(at: probe) }
+            guard FileManager.default.fileExists(atPath: tmp.appendingPathComponent("drinnen.txt").path) else {
+                throw ToolError.invalid("Schreiben im Arbeitsordner gesperrt: \(out)")
+            }
+            guard !FileManager.default.fileExists(atPath: probe.path) else { throw ToolError.invalid("Schreiben im Benutzerordner ging durch") }
+            guard AgentSession.dangerReason(tool: "read_file", args: ["path": "~/.ssh/id_ed25519"]) != nil,
+                  AgentSession.dangerReason(tool: "run_shell", args: ["command": "cat ~/.aws/credentials"]) != nil else {
+                throw ToolError.invalid("Zugangsdaten nicht von der Notbremse erkannt")
+            }
+            return "Arbeitsordner beschreibbar, Benutzerordner gesperrt, Zugangsdaten fragen nach"
+        }) { failed += 1 }
+
+        if !(await check("Lektionen, Plan, Überwachung") {
+            LessonStore.file = tmp.appendingPathComponent("lessons.json")
+            LessonStore.add("Im Projekt immer npm test zum Prüfen nutzen", folder: tmp.path, source: "Selbsttest")
+            guard LessonStore.promptSection(for: tmp.path).contains("npm test"), LessonStore.promptSection(for: nil).isEmpty,
+                  LessonStore.isCorrection("Nein, das stimmt so nicht") else { throw ToolError.invalid("Lektionen") }
+            guard Redaction.scrub("x ghp_abcdefghijklmnopqrstuvwxyz0123456789") == "x [GitHub-Token ausgeblendet]" else {
+                throw ToolError.invalid("Token nicht ausgeblendet")
+            }
+            let broken: [[String: Any]] = [["role": "assistant", "content": "", "tool_calls": [["id": "1"]]]]
+            guard Checkpoint.repairToolCalls(broken).count == 2 else { throw ToolError.invalid("offener Tool-Call nicht ergänzt") }
+            let (status, output) = WatchCheck.parse(try await Shell.run("echo neu; exit 3", cwd: tmp))
+            guard status == 3, WatchCheck.evaluate(trigger: .changed, status: status, output: output, previous: "alt").fired,
+                  WatchCheck.evaluate(trigger: .failed, status: status, output: output, previous: nil).fired else {
+                throw ToolError.invalid("Überwachung: \(status) \(output)")
+            }
+            return "Lektion im Projekt, Korrektur erkannt, Token ausgeblendet, Wiederaufnahme repariert, Überwachung schlägt an"
+        }) { failed += 1 }
+
         if !(await check("Gesprächsmodus: Pausenerkennung") {
             let (sent, early) = await MainActor.run { () -> (VoiceController, Box) in
                 let v = VoiceController()

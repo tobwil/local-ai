@@ -15,6 +15,8 @@ struct AgentContext {
     var spoken = false
     /// Wer und wo das Modell ist (Modellname, Chip, Arbeitsspeicher) – damit es Fragen zu sich selbst beantworten kann.
     var selfDescription = ""
+    /// Am Schrittlimit so oft von selbst weitermachen (lange Aufträge), statt auf „Weitermachen“ zu warten.
+    var autoContinue = 0
 }
 
 /// Ein Gespräch mit dem lokalen Modell. Im Agent-Modus darf das Modell Werkzeuge aufrufen;
@@ -105,6 +107,15 @@ final class AgentSession {
     @ObservationIgnored private var nudges = 0
     @ObservationIgnored private var recentCalls: [String] = []
     @ObservationIgnored private var userTask = ""
+    /// Namen der in diesem Auftrag erfolgreich genutzten Werkzeuge (für die Erkennung wiederholter Abläufe).
+    @ObservationIgnored private var runTools: [String] = []
+    /// Plan des Agenten (Markdown-Checkliste über update_plan); überdauert Verdichten und Neustarts.
+    private(set) var plan = ""
+    /// Planstand, der gerade im Systemprompt steht (nur beim Verdichten/Fortsetzen erneuert, siehe Checkpoint).
+    @ObservationIgnored private var injectedPlan = ""
+    @ObservationIgnored private var systemBase = ""
+    /// Frühere Gespräche mit fast demselben Auftrag – ab zwei schlägt der Chat einen Skill aus allen vor.
+    private(set) var repeatedChats: [String] = []
     static let qualityPrefix = "Qualitäts-Check"
 
     /// Ungefähre Länge des Verlaufs in Zeichen (für die Kontext-Anzeige; ≈ Zeichen / 3,5 Tokens).
@@ -209,6 +220,10 @@ final class AgentSession {
         history = []
         lastPromptTokens = 0
         chatID = UUID().uuidString
+        plan = ""
+        injectedPlan = ""
+        repeatedChats = []
+        userTask = ""
         customTitle = nil
         angeheftet = false
         preview.clear()
@@ -251,8 +266,14 @@ final class AgentSession {
         }
         // Systemprompt bei jeder Nachricht aktualisieren (Werkzeuge, Skills oder Gesprächsmodus können sich ändern);
         // bleibt er gleich, nutzt der Prompt-Cache weiter denselben Anfang.
-        let system: [String: Any] = ["role": "system", "content": systemPrompt(tools: tools, context: context)]
+        systemBase = systemPrompt(tools: tools, context: context)
+        let system: [String: Any] = ["role": "system", "content": systemBase + Checkpoint.planSection(injectedPlan)]
         if history.isEmpty { history.append(system) } else if history[0]["role"] as? String == "system" { history[0] = system }
+        // Klingt die Nachricht nach einer Korrektur der letzten Antwort, an learn_lesson erinnern (sieht nur das Modell).
+        let answeredBefore = items.contains { if case .assistant = $0.kind { return true }; return false }
+        if answeredBefore, tools.contains(where: { $0.name == "learn_lesson" }), LessonStore.isCorrection(text) {
+            text += "\n\n(Hinweis der App: Das klingt nach einer Korrektur. Setze sie um. Gilt sie über diese Aufgabe hinaus, halte sie mit learn_lesson als kurze Regel fest.)"
+        }
         items.append(Item(kind: .user(shown, images: images)))
         if images.isEmpty {
             history.append(["role": "user", "content": text])
@@ -267,15 +288,67 @@ final class AgentSession {
         lastReviewFailed = false
         nudges = 0
         recentCalls = []
-        userTask = String(shown.prefix(1500))
+        runTools = []
+        repeatedChats = []
+        // Fortsetzungen („Mach weiter …“) gehören zum bisherigen Auftrag – der Qualitäts-Check prüft gegen den ursprünglichen.
+        if !shown.hasPrefix(Checkpoint.continuePrefix) || userTask.isEmpty { userTask = String(shown.prefix(1500)) }
         isRunning = true
         runTask = Task {
+            // Während der Agent arbeitet, schläft der Mac nicht ein (Bildschirm darf aus).
+            let activity = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled, .userInitiated],
+                                                                 reason: "KI/lokal arbeitet an einem Auftrag")
+            defer { ProcessInfo.processInfo.endActivity(activity) }
             await loop(model: model, tools: tools, context: context)
+            // Lange Aufträge: am Schrittlimit von selbst weitermachen, statt auf „Weitermachen“ zu warten.
+            var rounds = 0
+            while !Task.isCancelled, rounds < context.autoContinue,
+                  case let .error(m)? = items.last?.kind, m.hasPrefix(Self.stepLimitPrefix) {
+                rounds += 1
+                items.append(Item(kind: .error(Self.qualityPrefix + ": Dranbleiben – der Agent macht von selbst weiter (\(rounds)/\(context.autoContinue)).")))
+                history.append(["role": "user", "content": "(Hinweis der App: Schrittlimit erreicht, du darfst weitermachen. Prüfe kurz deinen Plan\(tools.contains(where: { $0.name == "update_plan" }) ? " (update_plan)" : "") und mach an derselben Stelle weiter.)"])
+                save()
+                await loop(model: model, tools: tools, context: context)
+            }
             isRunning = false
             liveTokPerSec = 0
             save()
-            if !Task.isCancelled, case let .assistant(text, _, _)? = items.last?.kind, !text.isEmpty { onFinish?(text) }
+            if !Task.isCancelled, case let .assistant(text, _, _)? = items.last?.kind, !text.isEmpty {
+                noteRepetition()
+                onFinish?(text)
+            }
         }
+    }
+
+    /// Nach einem gelungenen Auftrag mit mehreren Werkzeugen: Gab es denselben Auftrag schon öfter?
+    private func noteRepetition() {
+        let used = Set(runTools)
+        guard runTools.count >= 3, !used.contains("use_skill"), !userTask.hasPrefix(Checkpoint.continuePrefix) else { return }
+        let words = TaskPatterns.keywords(userTask)
+        guard words.count >= 3 else { return }
+        let similar = TaskPatterns.record(TaskPattern(chatID: chatID, words: words, tools: used))
+        repeatedChats = similar.count >= 2 ? Array(similar.prefix(4)) : []
+    }
+
+    /// Werkzeug update_plan: der Agent hält bei langen Aufträgen eine Checkliste fest.
+    var planTool: AgentTool {
+        AgentTool(name: "update_plan",
+                  description: "Hält deinen Plan für einen längeren Auftrag als Markdown-Checkliste fest (- [ ] offen, - [x] erledigt). Zu Beginn anlegen, nach jedem erledigten Punkt mit dem vollständigen neuen Stand aufrufen. Der Plan bleibt erhalten, auch wenn ältere Schritte aus dem Verlauf gekürzt werden.",
+                  parameters: schema([("plan", "string", "Die vollständige Checkliste")], required: ["plan"]),
+                  needsApproval: false, source: "Eingebaut") { [weak self] args in
+            let text = try BuiltinTools.string(args, "plan").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { throw ToolError.invalid("Plan ist leer") }
+            await MainActor.run { self?.plan = String(text.prefix(4_000)) }
+            let p = Checkpoint.progress(text)
+            return p.total > 0 ? "Plan gespeichert (\(p.done)/\(p.total) erledigt)." : "Plan gespeichert. Tipp: als Checkliste mit - [ ] und - [x] schreiben."
+        }
+    }
+
+    /// Nach dem Verdichten den aktuellen Plan in den Systemprompt übernehmen (der Cache wird dabei ohnehin neu aufgebaut).
+    private func injectPlan() {
+        guard plan != injectedPlan, !history.isEmpty, history[0]["role"] as? String == "system" else { return }
+        injectedPlan = plan
+        let base = systemBase.isEmpty ? (history[0]["content"] as? String ?? "") : systemBase
+        history[0]["content"] = base + Checkpoint.planSection(injectedPlan)
     }
 
     // MARK: Systemprompt
@@ -316,6 +389,9 @@ final class AgentSession {
                 - Zum Schluss kurz: was du geändert hast und wie man es startet oder testet.
                 """
             }
+            if tools.contains(where: { $0.name == "update_plan" }) {
+                s += "\n- Längere Aufträge (mehr als ~5 Schritte): zuerst update_plan mit einer kurzen Checkliste, nach jedem erledigten Punkt abhaken. So verlierst du den Faden nicht, wenn ältere Schritte gekürzt werden."
+            }
             s += "\n- Angehängte Dateien stehen schon in der Nachricht (zwischen <dokument>-Tags) – nicht erneut lesen, direkt damit arbeiten. Nur wenn dort „gekürzt“ steht, den Rest mit read_file holen."
             if tools.contains(where: { $0.name == "open_canvas" }) {
                 s += "\n- Texte, die der Nutzer weiterbearbeiten will (Entwurf, Brief, Konzept, „als Canvas“, „editierbar“): mit open_canvas öffnen statt nur in den Chat schreiben. Der Nutzer kann im Canvas selbst ändern – vor eigenen Änderungen read_file."
@@ -351,6 +427,10 @@ final class AgentSession {
             s += "\n\n## Gedächtnis\nMit remember/forget pflegst du dauerhafte Notizen über den Nutzer."
             if !memory.isEmpty { s += " Bisher gemerkt:\n\(memory.suffix(4000))" }
         }
+        if tools.contains(where: { $0.name == "learn_lesson" }) {
+            s += "\nKorrigiert dich der Nutzer oder hast du einen Fehler behoben, der wieder passieren könnte, halte die Regel dahinter mit learn_lesson fest (ein Satz, als Anweisung)."
+        }
+        s += LessonStore.promptSection(for: project?.folder)
         if context.spoken {
             s += "\n\n## Gesprächsmodus\nDeine Antwort wird vorgelesen. Antworte natürlich, kurz (meist 1–4 Sätze) und ohne Tabellen, Code-Blöcke, Aufzählungszeichen oder Links. Wenn du Werkzeuge nutzt, fasse das Ergebnis mündlich zusammen."
         }
@@ -380,6 +460,7 @@ final class AgentSession {
             // (kalter Cache, z. B. altes Gespräch wieder geöffnet), greift unten die Wiederholung mit Kürzen.
             if local, lastPromptTokens > Self.compactAtTokens || Self.totalLength(history) > 90_000 {
                 compactHistory(budget: 9_000)
+                injectPlan()
                 lastPromptTokens = 0
             }
             let itemID = UUID()
@@ -420,6 +501,7 @@ final class AgentSession {
                     memoryRetries += 1
                     items.removeAll { $0.id == itemID }
                     compactHistory(budget: memoryRetries == 1 ? 9_000 : 6_500, keepRecent: memoryRetries == 1 ? 3 : 2)
+                    injectPlan()
                     items.append(Item(kind: .error(Self.qualityPrefix + ": Verlauf war zu lang für den Speicher – ältere Schritte gekürzt, es geht weiter." + (memoryRetries == 2 ? " Tipp: „GPU-Speicher erhöhen“ in den Einstellungen gibt dem Modell deutlich mehr Platz." : ""))))
                     continue
                 }
@@ -491,7 +573,7 @@ final class AgentSession {
                         Prüfe jetzt: 1) Sind alle Befunde oben behoben? 2) Ist jeder Punkt des Auftrags erfüllt? \
                         3) Stimmen sichtbare Texte (Tippfehler, Sprache, überlappende Beschriftungen, Startzustand)? \
                         Wenn etwas fehlt oder falsch ist: jetzt mit Werkzeugen beheben. Wenn alles stimmt: antworte nur mit einer \
-                        kurzen Zusammenfassung auf Deutsch (was geändert wurde, wie man es startet).
+                        kurzen Zusammenfassung auf Deutsch (was geändert wurde, wie man es startet).\(failing && tools.contains(where: { $0.name == "learn_lesson" }) ? "\nHast du einen Fehler behoben, der dir wieder passieren könnte (falscher Befehl, Pfad, Syntax-Falle), halte die Lehre daraus mit learn_lesson fest." : "")
                         """])
                     continue
                 }
@@ -517,6 +599,8 @@ final class AgentSession {
             // Selbst geschriebene Dateiinhalte stehen jetzt auf der Platte – im Verlauf genügt ein Verweis.
             // Das ändert nur die letzte Nachricht, der Prompt-Cache davor bleibt gültig.
             if local, rawBlocks == nil { history[assistantIndex] = Self.slimToolCalls(history[assistantIndex]) }
+            // Zwischenstand speichern: Wird die App beendet oder stürzt sie ab, geht es beim nächsten Start hier weiter.
+            save()
         }
         items.append(Item(kind: .error(Self.stepLimitPrefix + " \(context.maxSteps) Schritten – der Agent ist noch nicht fertig. Mit „Weitermachen“ geht es an derselben Stelle weiter.")))
     }
@@ -533,14 +617,18 @@ final class AgentSession {
             update(.failed, "Unbekanntes Werkzeug")
             return "Fehler: Werkzeug \(call.name) gibt es nicht. Verfügbar: \(tools.map(\.name).joined(separator: ", "))"
         }
-        let parsed = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any]) ?? [:]
+        var parsed = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any]) ?? [:]
+        parsed.removeValue(forKey: ShellSandbox.approvedKey)   // darf das Modell nicht selbst setzen
 
-        let dangerous = dangerGuard ? Self.dangerReason(tool: tool.name, args: parsed) : nil
+        let dangerous = dangerGuard ? Self.dangerReason(tool: tool.name, args: parsed, workspace: workspace) : nil
         var approval = tool.needsApproval ? (autoApprove ? "YOLO" : "freigegeben") : "frei"
         let started = Date()
-        if tool.needsApproval && (!autoApprove || dangerous != nil) {
+        // Auch sonst freie Werkzeuge (read_file …) fragen, wenn sie an Zugangsdaten wie ~/.ssh gehen.
+        if (tool.needsApproval || dangerous != nil) && (!autoApprove || dangerous != nil) {
             update(.awaitingApproval, "")
             let ok = await withCheckedContinuation { approvals[itemID] = $0 }
+            // Vom Nutzer genau so freigegeben → run_shell läuft (im Standard) ohne Sandbox.
+            if ok { parsed[ShellSandbox.approvedKey] = true }
             if dangerous != nil { approval = "Notbremse → " + (ok ? "freigegeben" : "abgelehnt") }
             guard ok else {
                 update(.denied, "Abgelehnt")
@@ -551,13 +639,15 @@ final class AgentSession {
             update(.running, "")
         }
         do {
-            var out = try await tool.run(parsed)
+            // Zugangsdaten (API-Schlüssel, private Schlüssel) gelangen weder in den Verlauf noch ins Protokoll.
+            var out = Redaction.scrub(try await tool.run(parsed))
             let written = PreviewStore.writtenPath(tool: tool.name, arguments: call.arguments, workspace: workspace)
             if let written, mode != .chat {
                 if !changedFiles.contains(written) { changedFiles.append(written) }
                 if let report = await CodeCheck.report(for: written) { out += "\n\n" + report }
             }
             update(.done, out)
+            runTools.append(tool.name)
             if let url = written {
                 preview.fileWritten(url)
             } else {
@@ -675,7 +765,14 @@ final class AgentSession {
 
 
     /// Erkennt Aktionen, die auch im YOLO-Modus eine Freigabe brauchen. nil = unbedenklich.
-    nonisolated static func dangerReason(tool: String, args: [String: Any]) -> String? {
+    nonisolated static func dangerReason(tool: String, args: [String: Any], workspace: URL? = nil) -> String? {
+        if ["read_file", "list_directory", "find_files", "search_files", "write_file", "edit_file", "replace_lines"].contains(tool),
+           let path = args["path"] as? String, Redaction.isSecretPath(path, workspace: workspace) {
+            return "Zugriff auf Zugangsdaten (\(path))"
+        }
+        if tool == "run_shell", let cmd = args["command"] as? String, Redaction.touchesSecrets(command: cmd) {
+            return "Shell-Befehl greift auf Zugangsdaten zu"
+        }
         if tool == "run_shell", let cmd = (args["command"] as? String)?.lowercased() {
             let patterns = [#"\bsudo\b"#, #"\brm\s+(-[a-z]*[rf][a-z]*\s+)+"#, #"\bmkfs"#, #"\bdiskutil\s+(erase|partition|zero)"#,
                             #"\bdd\s+if="#, #">\s*/dev/(disk|rdisk)"#, #"\bgit\s+push\b.*(-f\b|--force)"#, #"\bgit\s+reset\s+--hard"#,
@@ -735,12 +832,13 @@ final class AgentSession {
             messages.append(assistant)
             if calls.isEmpty { return text }
             for call in calls {
-                let args = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any]) ?? [:]
+                var args = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any]) ?? [:]
+                args.removeValue(forKey: ShellSandbox.approvedKey)   // unbeaufsichtigt: Shell immer in der Sandbox (außer „Aus“)
                 let out: String
                 if let tool = tools.first(where: { $0.name == call.name }) {
                     let started = Date()
                     do {
-                        out = try await tool.run(args)
+                        out = Redaction.scrub(try await tool.run(args))
                         ActionLog.log(context: logContext, tool: tool.name, source: tool.source, arguments: call.arguments,
                                       approval: "unbeaufsichtigt", ok: true, started: started, result: out)
                     } catch {
@@ -782,6 +880,9 @@ final class AgentSession {
         historyVersion += 1
     }
 
+    /// Gespeicherte Gespräche wurden außerhalb geändert – Liste und Hinweise neu einlesen.
+    func storeChanged() { historyVersion += 1 }
+
     func deleteChat(id: String) {
         ChatStore.delete(id: id)
         if id == chatID { newChat() }
@@ -803,7 +904,7 @@ final class AgentSession {
             }
         }
         ChatStore.save(id: chatID, ["title": title, "customTitle": customTitle ?? "", "angeheftet": angeheftet, "updated": Date().timeIntervalSince1970, "mode": mode.rawValue,
-                                    "project": project?.id.uuidString ?? "",
+                                    "project": project?.id.uuidString ?? "", "plan": plan, "laeuft": isRunning,
                                     "items": encoded, "history": history])
         historyVersion += 1
     }
@@ -814,7 +915,12 @@ final class AgentSession {
         customTitle = (json["customTitle"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         angeheftet = json["angeheftet"] as? Bool ?? false
         apply(project: projects.project(id: (json["project"] as? String).flatMap(UUID.init(uuidString:))))
-        history = json["history"] as? [[String: Any]] ?? []
+        // Brach ein Lauf mitten im Schritt ab, fehlen Antworten auf Werkzeug-Aufrufe – die ergänzen, sonst lehnt die API ab.
+        history = Checkpoint.repairToolCalls(json["history"] as? [[String: Any]] ?? [])
+        plan = json["plan"] as? String ?? ""
+        injectedPlan = plan
+        repeatedChats = []
+        userTask = ""
         items = (json["items"] as? [[String: Any]] ?? []).compactMap { d in
             switch d["k"] as? String {
             case "user":
@@ -838,6 +944,7 @@ final class AgentSession {
             default: return nil
             }
         }
+        for item in items { if case let .user(t, _) = item.kind { userTask = String(t.prefix(1500)); break } }
         lastPromptTokens = items.reversed().lazy.compactMap { item -> Int? in
             if case let .assistant(_, _, stats?) = item.kind, stats.promptTokens > 0 { return stats.promptTokens }
             return nil

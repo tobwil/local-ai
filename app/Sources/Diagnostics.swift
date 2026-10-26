@@ -40,9 +40,10 @@ enum ActionLog {
 
     static func log(context: String, tool: String, source: String, arguments: String, approval: String,
                     ok: Bool, started: Date, result: String) {
+        // Zugangsdaten (Tokens in Headern, Schlüssel in Ausgaben) nicht im Protokoll auf der Platte ablegen.
         append(Entry(time: started, context: context, tool: tool, source: source,
-                     arguments: String(arguments.prefix(2000)), approval: approval, ok: ok,
-                     seconds: Date().timeIntervalSince(started), result: String(result.prefix(500))))
+                     arguments: Redaction.scrub(String(arguments.prefix(2000))), approval: approval, ok: ok,
+                     seconds: Date().timeIntervalSince(started), result: String(Redaction.scrub(String(result.prefix(1500))).prefix(500))))
     }
 
     static func recent(_ n: Int = 300) -> [Entry] {

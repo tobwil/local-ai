@@ -43,6 +43,10 @@ final class AppSettings {
     var pimEnabled: Bool { didSet { UserDefaults.standard.set(pimEnabled, forKey: "pimEnabled") } }
     /// Bildschirmfotos für den Agenten (look_at_screen) und im Gesprächsmodus.
     var screenEnabled: Bool { didSet { UserDefaults.standard.set(screenEnabled, forKey: "screenEnabled") } }
+    /// Shell-Sandbox für den Agenten (siehe ShellSandbox).
+    var shellSandbox: ShellSandbox.Mode { didSet { UserDefaults.standard.set(shellSandbox.rawValue, forKey: "shellSandbox") } }
+    /// Am Schrittlimit so oft von selbst weitermachen (lange Aufträge, z. B. über Nacht). 0 = immer pausieren.
+    var autoContinue: Int { didSet { UserDefaults.standard.set(autoContinue, forKey: "autoContinue") } }
     /// Ort für Wetter im Briefing.
     var homeLocation: String { didSet { UserDefaults.standard.set(homeLocation, forKey: "homeLocation") } }
     var lanEnabled: Bool {
@@ -77,6 +81,8 @@ final class AppSettings {
         pimEnabled = d.bool(forKey: "pimEnabled")
         screenEnabled = d.object(forKey: "screenEnabled") as? Bool ?? true
         homeLocation = d.string(forKey: "homeLocation") ?? ""
+        shellSandbox = ShellSandbox.mode
+        autoContinue = d.object(forKey: "autoContinue") as? Int ?? 2
         lanEnabled = d.bool(forKey: "lanEnabled")
         lanKey = Keychain.get("lanKey") ?? ""
     }
@@ -97,6 +103,8 @@ enum ChatStore {
         var mode: WorkMode = .work
         var projectID: UUID?
         var angeheftet = false
+        /// Lief beim letzten Speichern noch ein Auftrag? (App beendet oder abgestürzt → Fortsetzen anbieten)
+        var laeuft = false
         /// Kleingeschriebener Text (Titel, Nachrichten, Antworten) für die Suche.
         var searchText = ""
         /// Fundstelle zur Suchanfrage (nur in Suchergebnissen).
@@ -135,6 +143,7 @@ enum ChatStore {
                      mode: (json["mode"] as? String).flatMap(WorkMode.init(rawValue:)) ?? .work,
                      projectID: (json["project"] as? String).flatMap(UUID.init(uuidString:)),
                      angeheftet: json["angeheftet"] as? Bool ?? false,
+                     laeuft: json["laeuft"] as? Bool ?? false,
                      searchText: text.lowercased())
     }
 
@@ -169,6 +178,13 @@ enum ChatStore {
     static func rename(id: String, to title: String) {
         guard var json = load(id: id) else { return }
         json["customTitle"] = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        save(id: id, json)
+    }
+
+    /// Unterbrochenen Auftrag nicht mehr zum Fortsetzen anbieten.
+    static func markStopped(id: String) {
+        guard var json = load(id: id) else { return }
+        json["laeuft"] = false
         save(id: id, json)
     }
 

@@ -28,7 +28,9 @@ struct AgentView: View {
             }
             chatAndPreview
         }
-        .sheet(isPresented: $skillSheet) { SkillFromChatSheet(chatID: app.session.chatID, chatTitle: app.session.title) }
+        .sheet(isPresented: $skillSheet) {
+            SkillFromChatSheet(chatID: app.session.chatID, chatTitle: app.session.title, moreChats: app.session.repeatedChats)
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button { withAnimation { chatListOpen.toggle() } } label: {
@@ -89,6 +91,7 @@ struct AgentView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
+                        InterruptedBanner()
                         if app.session.items.isEmpty { EmptyAgent() }
                         // Arbeitsschritte je Auftrag kompakt zusammengefasst, die Antwort groß darunter
                         ForEach(ChatSegment.build(app.session.items)) { segment in
@@ -100,9 +103,13 @@ struct AgentView: View {
                         // Nach einem gelungenen Ablauf mit mehreren Schritten: als wiederverwendbaren Skill anbieten.
                         if !app.session.isRunning, app.session.successfulToolCalls >= 3,
                            case .assistant(let text, _, _)? = app.session.items.last?.kind, !text.isEmpty {
+                            let repeats = app.session.repeatedChats.count
                             Button { skillSheet = true } label: {
-                                Label("Diesen Ablauf als Skill speichern – beim nächsten Mal weiß der Agent, wie es geht", systemImage: "lightbulb")
-                                    .font(.callout)
+                                Label(repeats >= 2
+                                      ? "So einen Auftrag hattest du schon \(repeats)× – jetzt als Skill speichern (aus allen \(repeats + 1) Gesprächen), dann klappt es künftig schneller und gleich"
+                                      : "Diesen Ablauf als Skill speichern – beim nächsten Mal weiß der Agent, wie es geht",
+                                      systemImage: repeats >= 2 ? "sparkles" : "lightbulb")
+                                    .font(repeats >= 2 ? .callout.weight(.semibold) : .callout)
                             }
                             .buttonStyle(.borderless).foregroundStyle(Theme.gold)
                         }
@@ -122,6 +129,38 @@ struct AgentView: View {
     private var lastText: Int {
         guard case let .assistant(text, thinking, _)? = app.session.items.last?.kind else { return 0 }
         return text.count + thinking.count
+    }
+}
+
+/// Ein Auftrag lief noch, als die App beendet wurde (oder abstürzte): an derselben Stelle fortsetzen.
+/// Eigene Ansicht, damit die Gesprächsliste nur bei gespeicherten Änderungen neu gelesen wird, nicht bei jedem Token.
+private struct InterruptedBanner: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let entry = app.interruptedChat { banner(entry) }
+    }
+
+    private func banner(_ entry: ChatStore.Entry) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.clockwise.circle.fill").font(.title2).foregroundStyle(Theme.gold)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Unterbrochener Auftrag: „\(entry.title)“").font(.callout.weight(.semibold))
+                Text("Die App wurde beendet, während der Agent daran arbeitete (\(entry.date.formatted(date: .abbreviated, time: .shortened))). Verlauf und Plan sind gespeichert.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Verwerfen") {
+                ChatStore.markStopped(id: entry.id)
+                app.session.storeChanged()
+            }
+            .buttonStyle(.borderless)
+            Button("Fortsetzen") { app.resume(chatID: entry.id) }
+                .buttonStyle(.borderedProminent)
+                .disabled(app.session.isRunning)
+        }
+        .padding(12)
+        .background(Theme.gold.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
