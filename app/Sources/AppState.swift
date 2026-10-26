@@ -219,7 +219,15 @@ final class AppState {
     }
 
     /// Werkzeuge des aktuellen Modus im Agent-Tab (Chat · Arbeiten · Code).
-    var modeTools: [AgentTool] { agentTools.filter(session.mode.allows) }
+    var modeTools: [AgentTool] {
+        let tools = agentTools.filter(session.mode.allows)
+        // Code-Projekt mit lokalem Modell: MCP-Werkzeuge fremder Server weglassen – jede Werkzeug-Beschreibung kostet bei
+        // jeder Anfrage Speicher, und auf 24 GB ist die Eingabe auf ~9 000 Tokens begrenzt.
+        guard session.mode == .code, !selectedIsCloud else { return tools }
+        let builtin: Set<String> = ["Eingebaut", "Web", "Mac", "Gedächtnis", "Dokumente", "Canvas", "Transkription", "Wissen",
+                                    "Bildschirm", "Skills", "Sub-Agenten", "Cloud-Experte"]
+        return tools.filter { builtin.contains($0.source) }
+    }
 
     var agentContext: AgentContext {
         var c = AgentContext(skills: plugins.skills, agents: plugins.agents, commands: plugins.commands,

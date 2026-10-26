@@ -142,7 +142,7 @@ final class PreviewStore {
 
     /// Pfad aus den Argumenten von write_file/edit_file (JSON-Text, wie im Chat gezeigt).
     static func writtenPath(tool: String, arguments: String, workspace: URL) -> URL? {
-        guard tool == "write_file" || tool == "edit_file",
+        guard ["write_file", "edit_file", "replace_lines"].contains(tool),
               let json = try? JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: Any],
               let path = json["path"] as? String else { return nil }
         return BuiltinTools.resolve(path, in: workspace)

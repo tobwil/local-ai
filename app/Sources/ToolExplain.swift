@@ -26,6 +26,7 @@ enum ToolExplain {
         case "search_files": return ("text.magnifyingglass", "Im Code gesucht: \(s("query").isEmpty ? s("pattern") : s("query"))")
         case "write_file": return ("square.and.pencil", "Geschrieben: \(file())")
         case "edit_file": return ("pencil.line", "Geändert: \(file())")
+        case "replace_lines": return ("text.line.first.and.arrowtriangle.forward", "Zeilen \(a["start_line"] ?? "?")–\(a["end_line"] ?? "?") ersetzt: \(file())")
         case "run_shell": return ("terminal", "Befehl: \(s("command").replacingOccurrences(of: "\n", with: " ").prefix(90))")
         case "web_search": return ("globe", "Im Web gesucht: \(s("query"))")
         case "fetch_url": return ("safari", "Seite gelesen: \(URL(string: s("url"))?.host() ?? s("url"))")
@@ -74,6 +75,9 @@ enum ToolExplain {
             return Info(summary: "Datei ändern: \(s("path"))",
                         detail: "− \(s("old_text").prefix(500))\n+ \(s("new_text").prefix(500))", detailLabel: "Änderung",
                         risk: "Ändert eine bestehende Datei.")
+        case "replace_lines":
+            return Info(summary: "Zeilen \(a["start_line"] ?? "?")–\(a["end_line"] ?? "?") ersetzen in \(s("path"))",
+                        detail: String(s("new_text").prefix(1200)), detailLabel: "Neuer Text", risk: "Ändert eine bestehende Datei.")
         case "create_document":
             return Info(summary: "Dokument erstellen: \(s("path"))", detail: String(s("content").prefix(800)), detailLabel: "Inhalt (Anfang)",
                         risk: "Legt eine Datei auf deinem Mac an (überschreibt eine gleichnamige).")

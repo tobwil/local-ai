@@ -15,8 +15,25 @@ enum DevEnvironment {
     static func detect() async {
         await Task.detached {
             var found: [String] = []
+            // Python: nur eines mit Root-Zertifikaten und aktuellem OpenSSL kann HTTPS (python.org-Installationen ohne
+            // „Install Certificates“ haben keine, Apples /usr/bin/python3 hat ein altes LibreSSL).
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            var pythons: [(path: String, https: Bool, version: String)] = []
+            for path in ["\(home)/.local/bin/python3.12", "\(home)/.local/bin/python3", "/opt/homebrew/bin/python3",
+                         "/usr/local/bin/python3", "/usr/bin/python3"] where FileManager.default.isExecutableFile(atPath: path) {
+                guard let out = run(path, ["-c", "import ssl,sys;print(sys.version.split()[0], ssl.create_default_context().cert_store_stats()['x509_ca'], ssl.OPENSSL_VERSION.split()[0])"], timeout: 4) else { continue }
+                let parts = out.split(separator: " ").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                guard parts.count >= 3 else { continue }
+                pythons.append((path, (Int(parts[1]) ?? 0) > 0 && parts[2] == "OpenSSL", parts[0]))
+            }
+            if let best = pythons.first(where: \.https) ?? pythons.first {
+                python = best.path
+                found.append("python3: \(best.path) (Python \(best.version)\(best.https ? ", HTTPS ok" : ""))")
+                for other in pythons where !other.https && other.path != best.path {
+                    found.append("  Achtung: \(other.path) kann kein HTTPS (Zertifikate/SSL fehlen) – für Internet-Zugriffe \(best.path) nehmen")
+                }
+            }
             for (name, candidates) in [("node", ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"]),
-                                       ("python3", ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]),
                                        ("git", ["/opt/homebrew/bin/git", "/usr/bin/git"]),
                                        ("npm", ["/opt/homebrew/bin/npm", "/usr/local/bin/npm"]),
                                        ("swift", ["/usr/bin/swift"])] {
@@ -25,7 +42,6 @@ enum DevEnvironment {
                           !version.isEmpty else { continue }
                     found.append("\(name): \(path) (\(version.trimmingCharacters(in: .whitespaces)))")
                     if name == "node" { node = path }
-                    if name == "python3" { python = path }
                     break
                 }
             }
@@ -67,6 +83,27 @@ enum DevEnvironment {
 
 /// Prüft eine gerade geschriebene Datei und liefert einen kurzen Befund für das Modell.
 enum CodeCheck {
+    /// Tests des Projekts finden und ausführen (tests/test_*.js mit node, tests/test_*.py mit python).
+    /// Liefert nil, wenn es keine gibt; sonst eine Zusammenfassung mit den fehlgeschlagenen Prüfungen.
+    static func projectTests(in root: URL) async -> String? {
+        let dir = root.appendingPathComponent("tests")
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return nil }
+        let tests = files.filter { $0.hasPrefix("test") && ($0.hasSuffix(".js") || $0.hasSuffix(".py")) }.sorted()
+        guard !tests.isEmpty else { return nil }
+        var lines: [String] = [], allOK = true
+        for t in tests {
+            let tool = t.hasSuffix(".js") ? DevEnvironment.node : DevEnvironment.python
+            guard let tool else { continue }
+            let path = dir.appendingPathComponent(t).path
+            let r = await Task.detached { DevEnvironment.check(tool, [path], timeout: 90) }.value
+            allOK = allOK && r.ok
+            let failed = r.output.components(separatedBy: "\n").filter { $0.hasPrefix("✗") || $0.contains("Error") || $0.contains("FAIL") }
+            let summary = r.output.components(separatedBy: "\n").last { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
+            lines.append("\(r.ok ? "✅" : "❌") tests/\(t): \(summary)" + (r.ok ? "" : "\n" + failed.prefix(12).map { "   \($0)" }.joined(separator: "\n")))
+        }
+        return (allOK ? "Projekttests grün:\n" : "Projekttests NICHT grün – erst beheben:\n") + lines.joined(separator: "\n")
+    }
+
     static let checkable: Set<String> = ["js", "mjs", "cjs", "json", "py", "html", "htm", "sh"]
 
     @MainActor
@@ -142,6 +179,8 @@ enum CodeCheck {
 @MainActor
 final class BrowserCheck: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     private var errors: [String] = []
+    private var longestGap = 0.0
+    private var loadedAt: Double?
     private var finished: CheckedContinuation<Void, Never>?
     private static var active: [BrowserCheck] = []
 
@@ -167,6 +206,11 @@ final class BrowserCheck: NSObject, WKNavigationDelegate, WKScriptMessageHandler
                 post((e.message || 'Fehler') + (e.filename ? ' (' + e.filename.split('/').pop() + ' Zeile ' + e.lineno + ')' : ''));
               }, true);
               window.addEventListener('unhandledrejection', e => post('Promise: ' + ((e.reason && e.reason.message) || e.reason)));
+              // Herzschlag: misst, wie lange die Seite blockiert (Endlosschleife, zu langsamer Code)
+              const beat = m => { try { webkit.messageHandlers.check.postMessage(m); } catch (e) {} };
+              let last = performance.now();
+              setInterval(() => { const now = performance.now(); beat({ gap: now - last }); last = now; }, 250);
+              window.addEventListener('load', () => beat({ loaded: performance.now() }));
             })();
             """, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.add(self, name: "check")
@@ -182,10 +226,23 @@ final class BrowserCheck: NSObject, WKNavigationDelegate, WKScriptMessageHandler
         window.close()
         var unique: [String] = []
         for e in errors where !unique.contains(e) { unique.append(e) }
+        if loadedAt == nil {
+            unique.append("Seite hat nach \(Int(seconds)) s noch nicht fertig geladen – sie blockiert vermutlich (Endlosschleife oder sehr langsamer Code beim Start). Mit performance.now() messen, welcher Teil so lange dauert.")
+        } else if longestGap > 1500 {
+            unique.append("Seite blockiert zwischendurch \(String(format: "%.1f", longestGap / 1000)) s am Stück (zu langsamer Code, z. B. in einer Schleife) – optimieren.")
+        }
         return unique
     }
 
     nonisolated func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let beat = message.body as? [String: Any] {
+            let gap = (beat["gap"] as? NSNumber)?.doubleValue, loaded = (beat["loaded"] as? NSNumber)?.doubleValue
+            MainActor.assumeIsolated {
+                if let gap { longestGap = max(longestGap, gap) }
+                if let loaded { loadedAt = loaded }
+            }
+            return
+        }
         let text = "\(message.body)"
         MainActor.assumeIsolated { if errors.count < 20 { errors.append(text) } }
     }
