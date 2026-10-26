@@ -58,11 +58,11 @@ final class AssistantStore {
         try? enc.encode(own).write(to: Self.file, options: .atomic)
     }
 
-    static let audio = ["m4a", "mp3", "wav", "aiff", "aac", "flac", "caf", "mp4", "mov", "m4v"]
+    static let audio = ["m4a", "mp3", "wav", "aiff", "aac", "flac", "caf", "ogg", "opus", "mp4", "mov", "m4v"]
     static let documents = ["pdf", "docx", "doc", "rtf", "odt", "txt", "md", "html", "pages"]
 
     static let builtin: [Assistant] = [
-        Assistant(id: "transkribieren", name: "Transkribieren", icon: "waveform", summary: "Audio oder Video in Text – lokal, nichts verlässt den Mac.",
+        Assistant(id: "transkribieren", name: "Transkribieren", icon: "waveform", summary: "Audio, Video oder WhatsApp-Sprachnachricht in Text – lokal, nichts verlässt den Mac.",
                   category: "Sprache & Meetings",
                   prompt: "Transkribiere die angehängte Aufnahme mit dem Werkzeug transcribe. Gib danach eine kurze Übersicht (Dauer, Themen) und den Speicherort des Transkripts an.",
                   input: .files, fileTypes: audio, builtin: true),

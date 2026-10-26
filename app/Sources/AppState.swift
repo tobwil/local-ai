@@ -222,7 +222,7 @@ final class AppState {
     var modeTools: [AgentTool] {
         let tools = agentTools.filter(session.mode.allows)
         // Code-Projekt mit lokalem Modell: MCP-Werkzeuge fremder Server weglassen – jede Werkzeug-Beschreibung kostet bei
-        // jeder Anfrage Speicher, und auf 24 GB ist die Eingabe auf ~9 000 Tokens begrenzt.
+        // jeder Anfrage Speicher, und auf 24 GB passen ohne Cache nur ~9 000 Tokens am Stück in den Speicher.
         guard session.mode == .code, !selectedIsCloud else { return tools }
         let builtin: Set<String> = ["Eingebaut", "Web", "Mac", "Gedächtnis", "Dokumente", "Canvas", "Transkription", "Wissen",
                                     "Bildschirm", "Skills", "Sub-Agenten", "Cloud-Experte"]
@@ -482,7 +482,10 @@ final class AppState {
             }
         }
         // Code-Projekte schreiben ganze Dateien in einer Antwort – dafür mehr Platz (der Kontext reicht auf 24 GB für ~29k).
-        if session.mode == .code { context.maxTokens = max(context.maxTokens, 16_384) }
+        if session.mode == .code {
+            context.maxTokens = max(context.maxTokens, 16_384)
+            context.maxSteps = max(context.maxSteps, settings.maxSteps * 2)   // Code braucht mehr Schritte (lesen, ändern, testen)
+        }
         adjust(&context)
         session.send(model: model, tools: modeTools, context: context)
     }

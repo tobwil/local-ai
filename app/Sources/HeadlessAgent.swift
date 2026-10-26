@@ -2,7 +2,8 @@ import Foundation
 
 /// `KI lokal --agent "<Auftrag>" [--workspace <ordner>] [--mode chat|work|code] [--yolo] [--max-tokens N] [--steps N] [--headless]`
 /// Mit --workspace landet der Auftrag im Projekt dieses Ordners (wird bei Bedarf angelegt); --mode erzwingt die Arbeitsweise;
-/// --attach <datei> (mehrfach möglich) hängt Dateien an wie die Büroklammer im Chat.
+/// --attach <datei> (mehrfach möglich) hängt Dateien an wie die Büroklammer im Chat; --weiter setzt das offene Gespräch
+/// der App fort, statt ein neues zu beginnen.
 /// Läuft die App bereits, übernimmt sie den Auftrag live im Agent-Tab (siehe AgentHandoff); das Terminal
 /// zeigt den Verlauf mit. Sonst – oder mit --headless – läuft der Agent ohne Oberfläche in diesem Prozess.
 /// Mit --yolo laufen Datei- und Shell-Werkzeuge ohne Rückfrage; die Notbremse bleibt an. Ohne Oberfläche

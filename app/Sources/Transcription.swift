@@ -5,7 +5,7 @@ import Speech
 /// Audio und Video lokal in Text umwandeln – mit der Spracherkennung von macOS auf dem Gerät.
 /// Ab macOS 26 mit SpeechAnalyzer (auch lange Aufnahmen), sonst mit SFSpeechRecognizer.
 enum Transcription {
-    static let audioExtensions: Set<String> = ["m4a", "mp3", "wav", "aiff", "aif", "caf", "aac", "flac", "mp4", "mov", "m4v"]
+    static let audioExtensions: Set<String> = ["m4a", "mp3", "wav", "aiff", "aif", "caf", "aac", "flac", "mp4", "mov", "m4v", "ogg", "opus", "oga"]
 
     static func tool(_ workspace: @escaping () -> URL) -> AgentTool {
         AgentTool(name: "transcribe",

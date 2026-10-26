@@ -100,7 +100,8 @@ Während der Agent arbeitet, zeigt er an, was gerade passiert („liest Eingabe 
   Datei warnt die App, wenn Funktionen verloren gehen.
 - Auf 24 GB passt nur begrenzt Verlauf in den Speicher: KI/lokal kürzt lange Werkzeug-Ergebnisse und Dateiinhalte im
   Verlauf automatisch (die Dateien selbst bleiben vollständig). Mehr Platz gibt „GPU-Speicher erhöhen“ in den Einstellungen.
-Erreicht ein Auftrag das Schrittlimit, erscheint **Weitermachen**. Nach gelungenen Abläufen mit mehreren Schritten schlägt
+Der Agent darf 50 Schritte am Stück machen, in Code-Projekten 100; danach pausiert er mit **Weitermachen**. Ruft er
+dasselbe Werkzeug immer wieder gleich auf, weist ihn die App darauf hin. Lange Aufträge erscheinen im Chat eingeklappt. Nach gelungenen Abläufen mit mehreren Schritten schlägt
 KI/lokal vor, sie [als Skill zu speichern](#8-skills).
 
 ## 4. Projekte und Gesprächsliste
@@ -112,8 +113,13 @@ Mitte wählst du *Ohne Projekt* oder ein Projekt; *Neues Projekt …* legt eins 
   Code-Werkzeuge, prüft nach jeder Änderung, schnelles Dekodieren (MTP, ~80 tok/s) – erkennbar am Kennzeichen **Code**.
 - Die Arbeitsweise lässt sich im Projekt auch fest einstellen (Automatisch · Nur Chat · Arbeiten · Code).
 
+**Projekt-Leiste** (rechts, Symbol ▯ oben rechts): **Umgebung** (Ordner – Klick öffnet den Finder, Rechtsklick „Im Terminal
+öffnen“ –, Git-Zweig, Modell), **Starten** (z. B. „Spiel starten“ oder „Seite öffnen“ für `index.html`, sonst die
+Anleitung), **Kontext** (wie voll das 32k-Arbeitsgedächtnis ist; ab ~24k kürzt die App ältere Schritte), **Ausgaben** des Gesprächs und die zuletzt geänderten
+**Projektdateien** – ein Klick öffnet sie in der Vorschau. So findest du Ergebnisse, egal welches Gespräch offen ist.
+
 **Gesprächsliste** (Symbol links oben im Agent): alle Gespräche nach Datum, **Suche über alle Gespräche** (Titel und Inhalt),
-im Projekt nur dessen Gespräche (*Alle anzeigen* erweitert). Rechtsklick: **Umbenennen**, **Als Skill speichern**,
+im Projekt nur dessen Gespräche (*Alle anzeigen* erweitert). Rechtsklick: **Anheften** (bleibt oben – z. B. das Haupt-Gespräch eines Projekts), **Umbenennen**, **Als Skill speichern**,
 **Als Assistent speichern**, In den Papierkorb. Die Spalte lässt sich breiter ziehen.
 
 ## 5. Vorschau und Canvas
@@ -161,7 +167,7 @@ Der Bereich **Assistenten** ist die Galerie fertiger Funktionen: ein Klick, Date
 
 | Assistent | Was er tut |
 |---|---|
-| **Transkribieren** | Audio/Video → Text mit Zeitmarken, **lokal** (Spracherkennung von macOS), als .md neben der Aufnahme |
+| **Transkribieren** | Audio/Video – auch **WhatsApp-Sprachnachrichten** (.ogg) – → Text mit Zeitmarken, **lokal**, als .md neben der Aufnahme |
 | **Meeting-Protokoll** | Aufnahme → Zusammenfassung, Entscheidungen, Aufgaben (wer, bis wann) als Word-Datei |
 | Dokument zusammenfassen | Kernaussagen, Zahlen, Fristen, offene Punkte |
 | Excel auswerten | Summen, Auffälligkeiten, Empfehlungen, Bericht als PDF |
@@ -245,7 +251,7 @@ Terminen, Erinnerungen, Mails, Wetter und Nachrichten – als Mitteilung, vorgel
 "/Applications/KI lokal.app/Contents/MacOS/KI lokal" --agent "Behebe die Tests" --workspace ~/Projekte/app --yolo
 ```
 
-Weitere Schalter: `--mode chat|work|code`, `--steps N`, `--max-tokens N`, `--headless` (ohne Oberfläche),
+Weitere Schalter: `--weiter` (im offenen Gespräch weitermachen statt ein neues zu beginnen), `--mode chat|work|code`, `--steps N`, `--max-tokens N`, `--headless` (ohne Oberfläche),
 `--selftest`, `--install-engine`, `--mcp-server`.
 
 **Links** öffnen Bereiche direkt, z. B. aus Kurzbefehlen oder Notizen:

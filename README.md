@@ -174,6 +174,9 @@ die Engine selbst startet; eine per `tools/serve.sh` gestartete Engine übernimm
 
 **Langer Kontext:** KV-Kompression (TurboQuant, 4 Bit) pro Modell + angepasste Speicherwächter: auf 24 GB ~29k Tokens
 bei 32,7 tok/s statt Abbruch bei 32k. Mit „GPU-Speicher erhöhen“ (Passwortabfrage, gilt bis zum Neustart) mehr.
+Im Agenten wächst der Verlauf bis ~24k Tokens, bevor die App ältere Schritte kürzt: Weil er nur angehängt wird, liest die
+Engine pro Schritt nur das Neue ein (gemessen bis 29,5k, 11–32 s pro Schritt). Ohne Cache – ein altes Gespräch neu
+geöffnet – passen ~20k am Stück (2,5 min); lehnt der Speicherwächter ab, kürzt die App und macht weiter.
 
 ```bash
 app/Scripts/build.sh --run                 # braucht Xcode und xcodegen (brew install xcodegen)
