@@ -27,7 +27,7 @@ Wofür es sich eignet, wo die Grenzen liegen und wie es sich von den Bezahl-Dien
 
 ## 1. Installation und erster Start
 
-1. **DMG öffnen** (`KI-lokal-0.6.0.dmg`) und *KI/lokal* in den Programme-Ordner ziehen – oder selbst bauen:
+1. **DMG öffnen** (`KI-lokal-0.6.1.dmg` aus den [Releases](https://github.com/tobwil/local-ai/releases)) und *KI/lokal* in den Programme-Ordner ziehen – oder selbst bauen:
    `app/Scripts/build.sh --run` (braucht Xcode und `brew install xcodegen`).
 2. **Engine einrichten:** Beim ersten Start schlägt die Übersicht „Engine einrichten“ vor. KI/lokal installiert
    [oMLX](https://github.com/jundot/omlx) nach `~/.kilokal` – einmalig, ein paar Minuten.

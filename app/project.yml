@@ -24,8 +24,8 @@ targets:
       properties:
         CFBundleName: KI/lokal
         CFBundleDisplayName: KI/lokal
-        CFBundleShortVersionString: "0.6.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: "0.6.1"
+        CFBundleVersion: "2"
         LSApplicationCategoryType: public.app-category.developer-tools
         CFBundleURLTypes:
           - CFBundleURLName: de.kisruptiv.kilokal
