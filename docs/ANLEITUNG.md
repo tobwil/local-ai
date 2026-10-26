@@ -93,6 +93,13 @@ Während der Agent arbeitet, zeigt er an, was gerade passiert („liest Eingabe 
   Tippfehler? Was fehlt, behebt er selbst.
 - Wird eine Antwort am Längenlimit abgeschnitten, macht er in kleineren Teilen weiter; kurz vor dem Schrittlimit wird er
   erinnert, zum Ende zu kommen.
+- Hat das Projekt **Tests** (`tests/test_*.js` oder `.py`), laufen sie vor „fertig“ automatisch – erst wenn sie grün sind,
+  gilt die Aufgabe als erledigt.
+- Kündigt das Modell nur an („Ich starte …“) oder fragt nach Inhalten, die es selbst lesen könnte, erinnert die App es
+  daran, das Werkzeug zu benutzen. Ganze Codeblöcke ersetzt es per Zeilennummer (`replace_lines`); beim Überschreiben einer
+  Datei warnt die App, wenn Funktionen verloren gehen.
+- Auf 24 GB passt nur begrenzt Verlauf in den Speicher: KI/lokal kürzt lange Werkzeug-Ergebnisse und Dateiinhalte im
+  Verlauf automatisch (die Dateien selbst bleiben vollständig). Mehr Platz gibt „GPU-Speicher erhöhen“ in den Einstellungen.
 Erreicht ein Auftrag das Schrittlimit, erscheint **Weitermachen**. Nach gelungenen Abläufen mit mehreren Schritten schlägt
 KI/lokal vor, sie [als Skill zu speichern](#8-skills).
 

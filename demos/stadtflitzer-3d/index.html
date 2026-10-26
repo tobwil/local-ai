@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Stadtflitzer 3D</title>
+<style>
+  :root { --blau: #274060; --hell: #7590BF; --gold: #FCC419; --glas: rgba(20, 32, 52, 0.62); --rand: rgba(255,255,255,0.14); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--blau); color: #fff;
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-user-select: none; user-select: none; }
+  #spiel { position: fixed; inset: 0; }
+  .ebene { position: fixed; inset: 0; pointer-events: none; }
+  .karte { background: var(--glas); border: 1px solid var(--rand); border-radius: 16px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+  .wort { font-weight: 800; letter-spacing: -0.02em; }
+  .wort b { color: var(--gold); font-weight: 300; margin: 0 0.04em; }
+
+  /* Menü */
+  #menue { pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px;
+    background: radial-gradient(ellipse at 50% 30%, rgba(39,64,96,0.35), rgba(16,26,42,0.82)); transition: opacity .4s; padding: 24px; }
+  #menue h1 { font-size: clamp(42px, 7vw, 86px); margin: 0; line-height: 1; text-shadow: 0 6px 30px rgba(0,0,0,.35); }
+  #menue .unter { color: #cfd9ea; font-size: clamp(14px, 1.6vw, 18px); margin-top: -12px; text-align: center; }
+  #staedte { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+  .stadt { width: 250px; padding: 16px; cursor: pointer; transition: transform .18s, border-color .18s; text-align: left; color: #fff; font: inherit; }
+  .stadt:hover, .stadt:focus { transform: translateY(-4px); border-color: var(--gold); outline: none; }
+  .stadt canvas { width: 100%; height: 130px; display: block; border-radius: 10px; background: rgba(255,255,255,0.06); }
+  .stadt h2 { margin: 12px 0 2px; font-size: 22px; }
+  .stadt p { margin: 0; color: #cfd9ea; font-size: 13px; line-height: 1.35; min-height: 36px; }
+  .stadt .zahlen { margin-top: 10px; font-size: 12px; color: var(--gold); }
+  #tasten { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; color: #cfd9ea; font-size: 13px; }
+  kbd { display: inline-block; min-width: 24px; padding: 2px 6px; margin-right: 4px; border-radius: 6px; background: rgba(255,255,255,0.14);
+    border: 1px solid var(--rand); font: 600 12px -apple-system, sans-serif; color: #fff; text-align: center; }
+  #absender { text-align: center; font-size: 12px; color: #9fb0c8; }
+  @media (max-height: 760px) { #menue { gap: 14px; } .stadt canvas { height: 90px; } .stadt p { min-height: 0; } }
+
+  /* HUD */
+  #hud { display: none; }
+  #hud .links { position: absolute; top: 18px; left: 18px; padding: 12px 16px; min-width: 170px; }
+  #hud .label { font-size: 11px; letter-spacing: .12em; color: #b9c6da; text-transform: uppercase; }
+  #hud .wert { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #hud .klein { font-size: 13px; color: #cfd9ea; font-variant-numeric: tabular-nums; }
+  #platz { position: absolute; top: 14px; right: 22px; text-align: right; font-weight: 900; font-size: 74px; line-height: 1;
+    text-shadow: 0 4px 20px rgba(0,0,0,.35); }
+  #platz small { font-size: 26px; color: #cfd9ea; font-weight: 700; }
+  #tempo { position: absolute; bottom: 22px; left: 22px; padding: 10px 16px; }
+  #power { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); padding: 10px 18px; display: flex; align-items: center; gap: 12px; }
+  #power .symbol { font-size: 30px; width: 40px; text-align: center; }
+  #karteMini { position: absolute; bottom: 18px; right: 18px; width: 190px; height: 190px; padding: 0; overflow: hidden; }
+  #meldung { position: absolute; top: 28%; left: 0; right: 0; text-align: center; font-weight: 900; font-size: clamp(54px, 10vw, 130px);
+    color: #fff; text-shadow: 0 8px 40px rgba(0,0,0,.4); opacity: 0; transition: opacity .25s, transform .25s; transform: scale(.9); }
+  #meldung.zeigen { opacity: 1; transform: scale(1); }
+  #meldung.gold { color: var(--gold); }
+  #hinweis { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); padding: 8px 16px; font-size: 14px; opacity: 0; transition: opacity .3s; }
+
+  /* Ziel */
+  #ziel { pointer-events: auto; display: none; align-items: center; justify-content: center; background: rgba(16,26,42,0.55); }
+  #ziel .karte { padding: 26px 30px; width: min(460px, 92vw); }
+  #ziel h2 { margin: 0 0 4px; font-size: 40px; }
+  #ziel table { width: 100%; border-collapse: collapse; margin: 14px 0; font-variant-numeric: tabular-nums; }
+  #ziel td { padding: 7px 6px; border-bottom: 1px solid var(--rand); }
+  #ziel tr.du td { color: var(--gold); font-weight: 700; }
+  .knoepfe { display: flex; gap: 10px; margin-top: 8px; }
+  button.k { flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--rand); background: rgba(255,255,255,0.1); color: #fff;
+    font: 700 15px -apple-system, sans-serif; cursor: pointer; }
+  button.k.haupt { background: var(--gold); color: #1d2433; border-color: var(--gold); }
+
+  /* Touch */
+  #touch { display: none; pointer-events: auto; }
+  #touch button { position: absolute; width: 74px; height: 74px; border-radius: 50%; border: 1px solid var(--rand); background: rgba(20,32,52,.55);
+    color: #fff; font-size: 28px; touch-action: none; }
+  @media (max-width: 700px) { #hud .links { transform: scale(.85); transform-origin: top left; } #karteMini { width: 130px; height: 130px; } #platz { font-size: 54px; } }
+</style>
+</head>
+<body>
+<div id="spiel"></div>
+
+<div id="menue" class="ebene">
+  <h1 class="wort">Stadt<b>/</b>flitzer</h1>
+  <div class="unter">Ferngesteuerte Spielzeugautos in echten Städten – Gebäude aus OpenStreetMap, Strecken entlang echter Straßen</div>
+  <div id="staedte"></div>
+  <div id="tasten">
+    <span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> oder <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fahren</span>
+    <span><kbd>Leertaste</kbd> Power-up</span><span><kbd>R</kbd> zurück auf die Straße</span>
+    <span><kbd>P</kbd> Autopilot</span><span><kbd>T</kbd> Ton</span><span><kbd>M</kbd> Menü</span>
+  </div>
+  <div id="absender">Ein Tool von KIsruptiv · gebaut mit KI/lokal · Kartendaten © OpenStreetMap-Mitwirkende (ODbL)</div>
+</div>
+
+<div id="hud" class="ebene">
+  <div class="links karte">
+    <div class="label">Runde</div><div class="wert" id="runde">1/3</div>
+    <div class="label" style="margin-top:6px">Zeit</div><div class="wert" id="zeit">0:00.00</div>
+    <div class="klein" id="beste"></div>
+  </div>
+  <div id="platz">4<small>/4</small></div>
+  <div id="tempo" class="karte"><div class="wert" id="kmh">0</div><div class="label">km/h</div></div>
+  <div id="power" class="karte"><div class="symbol" id="powerSymbol">·</div><div><div class="label">Power-up</div><div class="klein" id="powerName">Kiste einsammeln</div></div></div>
+  <div id="karteMini" class="karte"><canvas id="minimap" width="380" height="380" style="width:100%;height:100%"></canvas></div>
+  <div id="hinweis" class="karte"></div>
+  <div id="meldung"></div>
+</div>
+
+<div id="ziel" class="ebene">
+  <div class="karte">
+    <h2 class="wort" id="zielTitel">Ziel!</h2>
+    <div class="klein" id="zielUnter" style="color:#cfd9ea"></div>
+    <table id="zielTabelle"></table>
+    <div class="knoepfe"><button class="k haupt" id="nochmal">Nochmal</button><button class="k" id="andere">Andere Stadt</button></div>
+  </div>
+</div>
+
+<div id="touch" class="ebene">
+  <button data-taste="links" style="left:18px;bottom:110px">◀</button>
+  <button data-taste="rechts" style="left:104px;bottom:110px">▶</button>
+  <button data-taste="gas" style="right:18px;bottom:130px">▲</button>
+  <button data-taste="bremse" style="right:104px;bottom:60px">▼</button>
+  <button data-taste="power" style="right:18px;bottom:220px;font-size:22px">⚡</button>
+</div>
+
+<script src="lib/three.min.js"></script>
+<script src="data/muenchen.js"></script>
+<script src="data/hamburg.js"></script>
+<script src="data/berlin.js"></script>
+<script src="data/koeln.js"></script>
+<script src="js/world.js"></script>
+<script src="js/car.js"></script>
+<script src="js/race.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

@@ -139,10 +139,36 @@ enum SelfTest {
             try page("let x = 1;\ndocument.title = 'ok';\n").write(to: good, atomically: true, encoding: .utf8)
             let r1 = await CodeCheck.report(for: broken) ?? "", r2 = await CodeCheck.report(for: runtime) ?? ""
             let r3 = await CodeCheck.report(for: good) ?? ""
+            let slow = tmp.appendingPathComponent("blockiert.html")
+            try page("const t = Date.now(); while (Date.now() - t < 4000) {}\n").write(to: slow, atomically: true, encoding: .utf8)
+            let r4 = await CodeCheck.report(for: slow) ?? ""
+            guard r4.contains("blockiert") else { throw ToolError.invalid("Blockade nicht erkannt: \(r4)") }
             guard r1.hasPrefix("❌"), r1.contains("Zeile 4") else { throw ToolError.invalid("Syntax: \(r1)") }
             guard r2.hasPrefix("❌"), r2.contains("starteSpiel") else { throw ToolError.invalid("Laufzeit: \(r2)") }
             guard r3.hasPrefix("✅") else { throw ToolError.invalid("Gute Seite: \(r3)") }
-            return "Syntaxfehler mit Zeile ✓ · Laufzeitfehler im Browser ✓ · fehlerfreie Seite ✓ · \(DevEnvironment.summary.split(separator: "\n").count) Programme erkannt"
+            return "Syntaxfehler mit Zeile ✓ · Laufzeitfehler im Browser ✓ · Blockade erkannt ✓ · fehlerfreie Seite ✓ · \(DevEnvironment.summary.split(separator: "\n").count) Programme erkannt"
+        }) { failed += 1 }
+
+        if !(await check("Ankündigung ohne Tat erkennen") {
+            let yes = ["Ich starte mit dem Verstehen des Projekts.", "Lass mich zuerst die Datei lesen.", "Let me check the folder.",
+                       "Der Code nutzt die Keys klein geschrieben. Ich füge Normalisierung (.lower()) hinzu. Nach dem Start des Skripts melde ich mich."]
+            let no = ["Fertig – die Uhr läuft.", "Hier ist die Zusammenfassung: …", "Die Sonne geht um 7 Uhr auf."]
+            for t in yes where !AgentSession.isAnnouncement(t) { throw ToolError.invalid("nicht erkannt: \(t)") }
+            for t in no where AgentSession.isAnnouncement(t) { throw ToolError.invalid("fälschlich: \(t)") }
+            guard AgentSession.asksForWhatToolsCanDo("Ich kann den aktuellen Stand der Datei nicht lesen. Könntest du mir bitte den vollständigen Inhalt der Datei zur Verfügung stellen?"),
+                  !AgentSession.asksForWhatToolsCanDo("Die Datei ist fertig, viel Spaß!") else { throw ToolError.invalid("Werkzeug-Ausweichen") }
+            return "\(yes.count) Ankündigungen erkannt, Werkzeug-Ausweichen erkannt, \(no.count) echte Antworten durchgelassen"
+        }) { failed += 1 }
+
+        if !(await check("edit_file hilft bei ungenauem old_string") {
+            let code = "function a() {\n    if (x) {\n        go();\n    }\n}\n"
+            guard let fixed = EditHelp.replaceIgnoringIndentation(in: code, old: "if (x) {\n  go();\n}", new: "if (y) {\n    stop();\n}"),
+                  fixed.contains("    if (y) {"), fixed.contains("stop();") else { throw ToolError.invalid("Einrückung nicht ausgeglichen") }
+            let hint = EditHelp.closest(to: "if (x) { gehe(); }", in: code)
+            guard hint.contains("Zeile 2") else { throw ToolError.invalid("Ähnlichste Stelle: \(hint)") }
+            let warn = EditHelp.shrinkWarning(old: "function a() {}\nfunction b() {}\n" + String(repeating: "x\n", count: 60), new: "function a() {}\n")
+            guard warn?.contains("b") == true else { throw ToolError.invalid("Schrumpf-Warnung fehlt: \(warn ?? "nil")") }
+            return "Einrückung ausgeglichen ✓ · ähnlichste Stelle mit Zeilennummer ✓ · Warnung bei verlorenen Funktionen ✓"
         }) { failed += 1 }
 
         if !(await check("Werkzeug run_shell") {

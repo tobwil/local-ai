@@ -94,7 +94,9 @@ final class AgentSession {
     private var history: [[String: Any]] = []
     /// In diesem Auftrag geänderte Dateien (für den Qualitäts-Check vor „fertig“).
     @ObservationIgnored private var changedFiles: [URL] = []
-    @ObservationIgnored private var reviewDone = false
+    @ObservationIgnored private var reviews = 0
+    @ObservationIgnored private var lastReviewFailed = false
+    @ObservationIgnored private var nudges = 0
     @ObservationIgnored private var userTask = ""
     static let qualityPrefix = "Qualitäts-Check"
 
@@ -233,7 +235,9 @@ final class AgentSession {
             history.append(["role": "user", "content": parts])
         }
         changedFiles = []
-        reviewDone = false
+        reviews = 0
+        lastReviewFailed = false
+        nudges = 0
         userTask = String(shown.prefix(1500))
         isRunning = true
         runTask = Task {
@@ -274,7 +278,10 @@ final class AgentSession {
                 s += """
 
                 - Code-Modus: Der Arbeitsordner ist das Projekt. Erst Aufbau verstehen (list_directory, find_files, read_file), \
-                dann in kleinen Schritten mit edit_file ändern statt ganze Dateien neu zu schreiben.
+                dann in kleinen Schritten ändern statt ganze Dateien neu zu schreiben: kleine Stellen mit edit_file, ganze Blöcke \
+                oder Funktionen mit replace_lines (Zeilennummern aus read_file).
+                - Gibt es einen Ordner tests/ (test_*.js, test_*.py), führe die Tests nach jeder Änderung aus (node tests/test_x.js) \
+                und arbeite, bis alle grün sind – die App prüft das vor „fertig“ noch einmal.
                 - Große Dateien (über ~300 Zeilen) in Teilen schreiben: write_file mit dem ersten Teil, dann edit_file für weitere Teile.
                 - Nach jeder Änderung prüfen (Build, Tests, Linter oder Syntax-Check mit run_shell) und Fehler beheben, bevor du fertig meldest.
                 - Zum Schluss kurz: was du geändert hast und wie man es startet oder testet.
@@ -298,8 +305,11 @@ final class AgentSession {
             }
             if !context.skills.isEmpty {
                 s += "\n\n## Skills\nWenn eine Aufgabe zu einem Skill passt, lade ihn ZUERST mit use_skill und folge seiner Anleitung.\n"
-                for sk in context.skills.prefix(80) {
-                    s += "- \(sk.name): \(sk.description.prefix(240))\n"
+                // Im Code-Projekt knapp halten: jedes Zeichen im Systemprompt kostet Speicher bei jeder Anfrage.
+                if mode == .code {
+                    s += "Verfügbar (Name genügt für use_skill): " + context.skills.prefix(40).map(\.name).joined(separator: ", ") + "\n"
+                } else {
+                    for sk in context.skills.prefix(80) { s += "- \(sk.name): \(sk.description.prefix(240))\n" }
                 }
             }
             if !context.agents.isEmpty {
@@ -330,8 +340,14 @@ final class AgentSession {
 
     private func loop(model: String, tools: [AgentTool], context: AgentContext) async {
         let specs = tools.map(\.openAISpec)
+        var memoryRetries = 0
         for step in 0..<context.maxSteps {
             if Task.isCancelled { return }
+            // Lokale Modelle: Verlauf rechtzeitig verdichten, damit die Eingabe in den Speicher passt (24 GB).
+            let local = !CloudModels.isCloud(model)
+            // Erst ab ~12k Tokens verdichten, dann deutlich darunter (≈ 6k), damit das einmalige Neu-Einlesen ohne Cache
+            // in den Speicher passt und der Cache danach wieder lange trägt (24 GB: nur ~0,6 GB Luft neben dem Modell).
+            if local, Self.totalLength(history) > 22_000 { compactHistory(budget: 9_000) }
             let itemID = UUID()
             items.append(Item(id: itemID, kind: .assistant(text: "", thinking: "", stats: nil)))
             var text = "", thought = ""
@@ -364,7 +380,16 @@ final class AgentSession {
                     setKind(itemID, .assistant(text: text, thinking: thought, stats: nil))
                 }
             } catch {
-                if !Task.isCancelled { items.append(Item(kind: .error(error.localizedDescription))) }
+                // Zu lange Eingabe für den Speicher? Stärker verdichten und den Schritt wiederholen.
+                let message = error.localizedDescription
+                if local, memoryRetries < 2, message.contains("memory guard") || message.contains("Prefill would require") {
+                    memoryRetries += 1
+                    items.removeAll { $0.id == itemID }
+                    compactHistory(budget: memoryRetries == 1 ? 9_000 : 6_500, keepRecent: memoryRetries == 1 ? 3 : 2)
+                    items.append(Item(kind: .error(Self.qualityPrefix + ": Verlauf war zu lang für den Speicher – ältere Schritte gekürzt, es geht weiter." + (memoryRetries == 2 ? " Tipp: „GPU-Speicher erhöhen“ in den Einstellungen gibt dem Modell deutlich mehr Platz." : ""))))
+                    continue
+                }
+                if !Task.isCancelled { items.append(Item(kind: .error(message))) }
                 return
             }
 
@@ -387,6 +412,7 @@ final class AgentSession {
             }
             if let rawBlocks { assistant["_anthropic_content"] = rawBlocks }
             history.append(assistant)
+            let assistantIndex = history.count - 1
             if truncated {
                 // Am Längenlimit abgeschnitten: nicht einfach aufhören, sondern in kleineren Teilen weitermachen lassen.
                 items.append(Item(kind: .error("Antwort am Längenlimit (\(context.maxTokens) Tokens) abgeschnitten – der Agent macht in kleineren Teilen weiter.")))
@@ -394,13 +420,30 @@ final class AgentSession {
                 continue
             }
             if calls.isEmpty {
+                // Nur angekündigt („Ich starte …“, „Lass mich …“), aber nichts getan? Kleine Modelle beenden dann gern
+                // den Zug. Bis zu zweimal erinnern, den Schritt wirklich auszuführen.
+                if nudges < 3, mode != .chat, !tools.isEmpty, step < context.maxSteps - 1 {
+                    if Self.asksForWhatToolsCanDo(text) {
+                        nudges += 1
+                        history.append(["role": "user", "content": "(Hinweis der App: Du hast Werkzeuge und kannst alles selbst holen – Dateien lesen (read_file, list_directory), Befehle ausführen (run_shell), im Web suchen. Frag den Nutzer nicht nach Inhalten, die du selbst lesen kannst. Mach den nächsten Schritt jetzt mit einem Werkzeug.)"])
+                        continue
+                    }
+                    if Self.isAnnouncement(text) {
+                        nudges += 1
+                        history.append(["role": "user", "content": "(Hinweis der App: Du hast nur angekündigt, aber kein Werkzeug aufgerufen. Führe den nächsten Schritt jetzt direkt mit einem Werkzeug aus – nicht beschreiben, machen.)"])
+                        continue
+                    }
+                }
                 // Qualitäts-Check: Hat der Agent Code geändert, prüft die App alles noch einmal und lässt ihn
                 // Befunde beheben, bevor er „fertig“ meldet – einmal pro Auftrag.
-                if !reviewDone, !changedFiles.isEmpty, mode != .chat, step < context.maxSteps - 2 {
-                    reviewDone = true
+                // Einmal prüfen; waren Tests/Prüfungen rot, bis zu dreimal (sonst meldet das Modell „fertig“ trotz Fehlern).
+                if reviews < (lastReviewFailed ? 3 : 1), !changedFiles.isEmpty, mode != .chat, step < context.maxSteps - 2 {
+                    reviews += 1
                     var reports: [String] = []
                     for url in changedFiles { if let r = await CodeCheck.report(for: url) { reports.append(r) } }
-                    let failing = reports.contains { $0.hasPrefix("❌") }
+                    if let tests = await CodeCheck.projectTests(in: workspace) { reports.append(tests) }
+                    let failing = reports.contains { $0.hasPrefix("❌") || $0.contains("NICHT grün") }
+                    lastReviewFailed = failing
                     items.append(Item(kind: .error(Self.qualityPrefix + (failing ? ": Fehler gefunden – der Agent behebt sie." : ": Prüfungen bestanden – letzter Blick auf Vollständigkeit und Texte."))))
                     history.append(["role": "user", "content": """
                         (Qualitäts-Check der App, bevor du fertig meldest)
@@ -425,8 +468,11 @@ final class AgentSession {
                 // Kurz vor dem Schrittlimit daran erinnern, zum Ende zu kommen.
                 let left = context.maxSteps - step - 1
                 if left <= 3 { result += "\n\n(Hinweis der App: noch \(left) Schritt\(left == 1 ? "" : "e") – bring die Aufgabe jetzt zu Ende.)" }
-                history.append(["role": "tool", "tool_call_id": call.id, "content": result])
+                history.append(["role": "tool", "tool_call_id": call.id, "content": local ? Self.capToolResult(result, tool: call.name) : result])
             }
+            // Selbst geschriebene Dateiinhalte stehen jetzt auf der Platte – im Verlauf genügt ein Verweis.
+            // Das ändert nur die letzte Nachricht, der Prompt-Cache davor bleibt gültig.
+            if local, rawBlocks == nil { history[assistantIndex] = Self.slimToolCalls(history[assistantIndex]) }
         }
         items.append(Item(kind: .error(Self.stepLimitPrefix + " (\(context.maxSteps) Schritte) – der Agent ist noch nicht fertig.")))
     }
@@ -491,6 +537,99 @@ final class AgentSession {
 
     static let stepLimitPrefix = "Schrittlimit erreicht"
 
+    // MARK: Verlauf verdichten
+
+    /// Hält den Verlauf unter `budget` Zeichen (≈ Zeichen/3,5 Tokens): ältere Werkzeug-Ergebnisse und große Dateiinhalte
+    /// in früheren Werkzeug-Aufrufen werden gekürzt. Systemprompt, Aufgabe und die letzten `keepRecent` Nachrichten bleiben.
+    private func compactHistory(budget: Int, keepRecent: Int = 6) {
+        func size() -> Int { history.reduce(0) { $0 + Self.length(of: $1) } }
+        guard size() > budget, history.count > keepRecent + 2 else { return }
+        let protected = Set([0, 1] + Array(max(0, history.count - keepRecent)..<history.count))
+        for limit in [1500, 600, 200] {
+            for i in history.indices where !protected.contains(i) {
+                var m = history[i]
+                if m["role"] as? String == "tool", let c = m["content"] as? String, c.count > limit {
+                    m["content"] = String(c.prefix(limit)) + "\n… [von der App gekürzt: \(c.count) Zeichen – bei Bedarf erneut lesen]"
+                }
+                if var calls = m["tool_calls"] as? [[String: Any]] {
+                    for j in calls.indices {
+                        guard var f = calls[j]["function"] as? [String: Any], let a = f["arguments"] as? String, a.count > limit,
+                              var obj = (try? JSONSerialization.jsonObject(with: Data(a.utf8))) as? [String: Any] else { continue }
+                        for (k, v) in obj { if let s = v as? String, s.count > 200 { obj[k] = String(s.prefix(200)) + " …[gekürzt, steht in der Datei]" } }
+                        if let d = try? JSONSerialization.data(withJSONObject: obj), let s = String(data: d, encoding: .utf8) { f["arguments"] = s }
+                        calls[j]["function"] = f
+                    }
+                    m["tool_calls"] = calls
+                }
+                if m["role"] as? String == "assistant", let c = m["content"] as? String, c.count > limit * 2 {
+                    m["content"] = String(c.prefix(limit * 2)) + " …[gekürzt]"
+                }
+                history[i] = m
+            }
+            if size() <= budget { return }
+        }
+    }
+
+    /// Werkzeug-Ergebnis begrenzen, bevor es in den Verlauf kommt (Anfang und Ende bleiben, Hinweis zum Nachlesen).
+    nonisolated static func capToolResult(_ text: String, tool: String) -> String {
+        let limit = tool == "read_file" ? 6_000 : 4_000
+        guard text.count > limit else { return text }
+        let head = text.prefix(limit - 1_200), tail = text.suffix(900)
+        let hint = tool == "read_file" ? "mit start_line/end_line gezielt nachlesen" : "bei Bedarf gezielter abfragen (z. B. grep, head, tail)"
+        return "\(head)\n\n… [von der App gekürzt: \(text.count - head.count - tail.count) Zeichen ausgelassen – \(hint)] …\n\n\(tail)"
+    }
+
+    /// Große Argumente (Dateiinhalte) in einer Werkzeug-Anfrage des Modells durch einen kurzen Verweis ersetzen.
+    nonisolated static func slimToolCalls(_ message: [String: Any]) -> [String: Any] {
+        guard var calls = message["tool_calls"] as? [[String: Any]] else { return message }
+        var m = message
+        for j in calls.indices {
+            guard var f = calls[j]["function"] as? [String: Any], let a = f["arguments"] as? String, a.count > 1_500,
+                  var obj = (try? JSONSerialization.jsonObject(with: Data(a.utf8))) as? [String: Any] else { continue }
+            for key in ["content", "new_string", "old_string", "new_text", "old_text"] {   // auch replace_lines.new_text
+                if let v = obj[key] as? String, v.count > 400 {
+                    obj[key] = String(v.prefix(240)) + " …[\(v.count) Zeichen – vollständig in der Datei, bei Bedarf read_file]"
+                }
+            }
+            if let d = try? JSONSerialization.data(withJSONObject: obj), let s = String(data: d, encoding: .utf8) { f["arguments"] = s }
+            calls[j]["function"] = f
+        }
+        m["tool_calls"] = calls
+        return m
+    }
+
+    private static func totalLength(_ history: [[String: Any]]) -> Int { history.reduce(0) { $0 + length(of: $1) } }
+
+    private static func length(of message: [String: Any]) -> Int {
+        var n = (message["content"] as? String)?.count ?? 600   // Bilder/Teile grob schätzen
+        for c in message["tool_calls"] as? [[String: Any]] ?? [] {
+            n += ((c["function"] as? [String: Any])?["arguments"] as? String)?.count ?? 0
+        }
+        return n
+    }
+
+    /// Kurze Absichtserklärung ohne Ergebnis, z. B. „Ich starte mit …“, „Lass mich die Datei lesen.“
+    /// „Kannst du mir den Inhalt der Datei geben?“ – obwohl read_file & Co. bereitstehen.
+    nonisolated static func asksForWhatToolsCanDo(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.range(of: #"(könntest|kannst) du mir .{0,80}(inhalt|datei|ausgabe|code|ordner)|zur verfügung stell|ich kann .{0,60}nicht (lesen|sehen|öffnen|zugreifen)|liegt mir nicht vor|ohne den .{0,30}(code|inhalt)|i (don't|do not|cannot|can't) (have access|see|read)|please (provide|share|paste)"#,
+                           options: .regularExpression) != nil
+    }
+
+    nonisolated static func isAnnouncement(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, t.count < 2500 else { return false }
+        // Entscheidend ist das Ende: Kündigt der letzte Satz etwas an, statt ein Ergebnis zu nennen?
+        let tail = String(t.suffix(260)).lowercased()
+        if ["fertig", "erledigt", "zusammenfassung", "hier ist", "ergebnis:", "viel spaß", "gerne wieder"].contains(where: tail.contains) { return false }
+        if tail.hasSuffix("?") { return false }   // Rückfrage an den Nutzer ist in Ordnung
+        if tail.hasSuffix(":") || tail.hasSuffix("…") || tail.hasSuffix("...") { return true }
+        let verbs = "starte|beginne|werde|schaue|prüfe|lese|erstelle|schreibe|lege|mache|fange|füge|ändere|korrigiere|passe|baue|teste|führe|warte|melde|behebe|ergänze|aktualisiere|rufe"
+        return tail.range(of: "\\b((ich|wir) (\(verbs))|lass mich|lass uns|let me|i('ll| will)|als nächstes|jetzt (\(verbs))|zuerst (\(verbs))|dann (\(verbs)))\\b",
+                          options: .regularExpression) != nil
+    }
+
+
     /// Erkennt Aktionen, die auch im YOLO-Modus eine Freigabe brauchen. nil = unbedenklich.
     nonisolated static func dangerReason(tool: String, args: [String: Any]) -> String? {
         if tool == "run_shell", let cmd = (args["command"] as? String)?.lowercased() {
@@ -515,7 +654,7 @@ final class AgentSession {
                 return "Shell-Befehl ändert systemweit installierte Pakete"
             }
         }
-        if tool == "write_file" || tool == "edit_file", let path = args["path"] as? String {
+        if ["write_file", "edit_file", "replace_lines"].contains(tool), let path = args["path"] as? String {
             let p = (path as NSString).expandingTildeInPath
             if p.hasPrefix("/") && !p.hasPrefix(Paths.home.path) && !p.hasPrefix("/tmp") && !p.hasPrefix("/private/tmp") {
                 return "Schreiben außerhalb des Benutzerordners"

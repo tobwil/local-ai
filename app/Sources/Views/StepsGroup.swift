@@ -65,7 +65,7 @@ struct StepsGroup: View {
         let tools = self.tools
         let running = tools.contains { $0.state == .running }
         let failed = tools.filter { $0.state == .failed }.count
-        let changed = Set(tools.filter { ["write_file", "edit_file", "create_document", "open_canvas"].contains($0.name) && $0.state == .done }
+        let changed = Set(tools.filter { ["write_file", "edit_file", "replace_lines", "create_document", "open_canvas"].contains($0.name) && $0.state == .done }
             .compactMap { ToolExplain.path(of: $0.args) }).count
         let lastCheck = tools.last { $0.result.contains("Automatische Prüfung") }?.result
         VStack(alignment: .leading, spacing: 0) {

@@ -118,6 +118,14 @@ Arbeiten · Code).
   ursprünglichen Auftrag zurück und muss Fehler, fehlende Punkte und Tippfehler beheben.
 - **Längen- und Schrittlimit:** abgeschnittene Antworten werden in Teilen fortgesetzt; kurz vor dem Limit eine Erinnerung,
   danach „Weitermachen“.
+- **Projekttests:** Gibt es `tests/test_*.js|py`, führt der Qualitäts-Check sie vor „fertig“ aus – bei Rot bis zu dreimal.
+- **Typische Ausrutscher abgefangen:** bloße Ankündigungen ohne Werkzeug („Ich starte …“) und Rückfragen nach Inhalten, die
+  der Agent selbst lesen kann, lösen eine Erinnerung aus; `replace_lines` ersetzt ganze Blöcke per Zeilennummer;
+  `edit_file` gleicht abweichende Einrückung aus und zeigt sonst die ähnlichste Stelle; `write_file` warnt, wenn beim
+  Überschreiben Funktionen verloren gehen; die Browser-Prüfung erkennt auch hängende Seiten.
+- **Speicher (24 GB):** Werkzeug-Ergebnisse und selbst geschriebene Dateiinhalte werden beim Eintragen in den Verlauf
+  gekürzt (Prompt-Cache bleibt gültig), der Verlauf wird früh verdichtet, bei „memory guard“ automatisch stärker gekürzt und
+  wiederholt; im Code-Projekt schlanker Systemprompt ohne fremde MCP-Werkzeuge.
 
 **Vorschau und Canvas:** Rechts neben dem Chat zeigt ein Panel, was der Agent schreibt – HTML und Spiele laufen live
 (WebKit, mit Web-Inspektor, auf Panelbreite skaliert), Markdown gerendert, Bilder/PDF/Office per QuickLook, Code mit
@@ -177,6 +185,15 @@ app/Scripts/make-dmg.sh                    # signierte DMG (Developer ID, Harden
 ```
 
 Daten liegen unter `~/.kilokal/` (Engine, Modelle, Skills, Plugins, Gespräche, Gedächtnis, Wissensindex, Automationen, Protokoll).
+
+## Demo: Stadtflitzer 3D
+
+Ferngesteuerte Spielzeugautos (wie Re-Volt) durch **echte Innenstädte** – München, Hamburg, Berlin, Köln – mit Gebäuden aus
+OpenStreetMap, Wahrzeichen, Power-ups und drei Computer-Gegnern. `demos/stadtflitzer-3d/index.html` per Doppelklick öffnen
+(ohne Server, ohne Internet). Entstanden in einer Nacht mit dem lokalen Agenten und Claude – wer was gebaut hat und was
+KI/lokal dabei gelernt hat: [demos/stadtflitzer-3d/README.md](demos/stadtflitzer-3d/README.md).
+
+![Stadtflitzer 3D](docs/bilder/spiel-rennen.png)
 
 ## Nächste Schritte
 

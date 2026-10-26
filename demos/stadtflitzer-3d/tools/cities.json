@@ -1,0 +1,415 @@
+{
+  "_hinweis": "Strecken entlang echter Straßen (Breite/Länge, WGS84). Wahrzeichen mit Höhe in Metern. bbox = [süd, west, nord, ost] für OpenStreetMap-Gebäude.",
+  "muenchen": {
+    "name": "München",
+    "untertitel": "Altstadt-Runde: Marienplatz – Stachus – Sendlinger Tor",
+    "farben": {
+      "himmel": "#9fc7ef",
+      "boden": "#c9c2b4",
+      "strasse": "#4a4a4f",
+      "gebaeude": "#e8dcc8",
+      "akzent": "#0067b1"
+    },
+    "bbox": [
+      48.1325,
+      11.564,
+      48.1405,
+      11.5785
+    ],
+    "strecke": [
+      [
+        48.13737,
+        11.57549
+      ],
+      [
+        48.1378,
+        11.5727
+      ],
+      [
+        48.1383,
+        11.57
+      ],
+      [
+        48.1387,
+        11.5678
+      ],
+      [
+        48.13906,
+        11.56584
+      ],
+      [
+        48.1376,
+        11.5661
+      ],
+      [
+        48.136,
+        11.5665
+      ],
+      [
+        48.13423,
+        11.56739
+      ],
+      [
+        48.1348,
+        11.5692
+      ],
+      [
+        48.1354,
+        11.5705
+      ],
+      [
+        48.1362,
+        11.5725
+      ],
+      [
+        48.1368,
+        11.5742
+      ]
+    ],
+    "wahrzeichen": [
+      {
+        "name": "Frauenkirche",
+        "pos": [
+          48.13861,
+          11.57347
+        ],
+        "hoehe": 99,
+        "form": "zwei_tuerme"
+      },
+      {
+        "name": "Neues Rathaus",
+        "pos": [
+          48.13774,
+          11.57561
+        ],
+        "hoehe": 85,
+        "form": "turm"
+      },
+      {
+        "name": "Karlstor",
+        "pos": [
+          48.13895,
+          11.5665
+        ],
+        "hoehe": 25,
+        "form": "tor"
+      },
+      {
+        "name": "Sendlinger Tor",
+        "pos": [
+          48.13423,
+          11.56739
+        ],
+        "hoehe": 20,
+        "form": "tor"
+      }
+    ],
+    "massstab": 1.0
+  },
+  "hamburg": {
+    "name": "Hamburg",
+    "untertitel": "Hafen-Runde: Jungfernstieg – Speicherstadt – Elbphilharmonie",
+    "farben": {
+      "himmel": "#a9bdd0",
+      "boden": "#b8b2a6",
+      "strasse": "#45464a",
+      "gebaeude": "#a5523a",
+      "akzent": "#e2001a"
+    },
+    "bbox": [
+      53.5395,
+      9.9785,
+      53.556,
+      10.003
+    ],
+    "strecke": [
+      [
+        53.5507,
+        9.9925
+      ],
+      [
+        53.5533,
+        9.9931
+      ],
+      [
+        53.5544,
+        10.0002
+      ],
+      [
+        53.5515,
+        10.0009
+      ],
+      [
+        53.5485,
+        9.9995
+      ],
+      [
+        53.5448,
+        9.995
+      ],
+      [
+        53.543,
+        9.9895
+      ],
+      [
+        53.5413,
+        9.9852
+      ],
+      [
+        53.5439,
+        9.981
+      ],
+      [
+        53.546,
+        9.9845
+      ],
+      [
+        53.548,
+        9.987
+      ],
+      [
+        53.5495,
+        9.99
+      ]
+    ],
+    "wahrzeichen": [
+      {
+        "name": "Elbphilharmonie",
+        "pos": [
+          53.54132,
+          9.98418
+        ],
+        "hoehe": 110,
+        "form": "welle"
+      },
+      {
+        "name": "Rathaus",
+        "pos": [
+          53.55069,
+          9.99285
+        ],
+        "hoehe": 112,
+        "form": "turm"
+      },
+      {
+        "name": "Speicherstadt",
+        "pos": [
+          53.5447,
+          9.99
+        ],
+        "hoehe": 30,
+        "form": "speicher"
+      },
+      {
+        "name": "Michel",
+        "pos": [
+          53.5483,
+          9.9788
+        ],
+        "hoehe": 132,
+        "form": "turm"
+      }
+    ],
+    "massstab": 0.6
+  },
+  "berlin": {
+    "name": "Berlin",
+    "untertitel": "Mitte-Runde: Brandenburger Tor – Unter den Linden – Fernsehturm",
+    "farben": {
+      "himmel": "#b4c8dc",
+      "boden": "#bdb8ae",
+      "strasse": "#3f4044",
+      "gebaeude": "#d8d2c4",
+      "akzent": "#000000"
+    },
+    "bbox": [
+      52.5125,
+      13.374,
+      52.5235,
+      13.413
+    ],
+    "strecke": [
+      [
+        52.51627,
+        13.3777
+      ],
+      [
+        52.5168,
+        13.385
+      ],
+      [
+        52.5173,
+        13.393
+      ],
+      [
+        52.5179,
+        13.398
+      ],
+      [
+        52.519,
+        13.4025
+      ],
+      [
+        52.52082,
+        13.4094
+      ],
+      [
+        52.5185,
+        13.408
+      ],
+      [
+        52.5165,
+        13.4045
+      ],
+      [
+        52.515,
+        13.398
+      ],
+      [
+        52.5142,
+        13.387
+      ],
+      [
+        52.5145,
+        13.3772
+      ]
+    ],
+    "wahrzeichen": [
+      {
+        "name": "Fernsehturm",
+        "pos": [
+          52.52082,
+          13.4094
+        ],
+        "hoehe": 368,
+        "form": "fernsehturm"
+      },
+      {
+        "name": "Brandenburger Tor",
+        "pos": [
+          52.51627,
+          13.3777
+        ],
+        "hoehe": 26,
+        "form": "tor"
+      },
+      {
+        "name": "Berliner Dom",
+        "pos": [
+          52.51908,
+          13.40108
+        ],
+        "hoehe": 98,
+        "form": "kuppel"
+      },
+      {
+        "name": "Reichstag",
+        "pos": [
+          52.51862,
+          13.37618
+        ],
+        "hoehe": 47,
+        "form": "kuppel"
+      }
+    ],
+    "massstab": 0.5
+  },
+  "koeln": {
+    "name": "Köln",
+    "untertitel": "Altstadt-Runde: Dom – Heumarkt – Rheinufer",
+    "farben": {
+      "himmel": "#a7c4dd",
+      "boden": "#c4bfb6",
+      "strasse": "#47484c",
+      "gebaeude": "#d9cdb8",
+      "akzent": "#c8102e"
+    },
+    "bbox": [
+      50.933,
+      6.95,
+      50.9445,
+      6.966
+    ],
+    "massstab": 1.0,
+    "strecke": [
+      [
+        50.9408,
+        6.9548
+      ],
+      [
+        50.939,
+        6.955
+      ],
+      [
+        50.9375,
+        6.9553
+      ],
+      [
+        50.9358,
+        6.957
+      ],
+      [
+        50.9359,
+        6.9601
+      ],
+      [
+        50.938,
+        6.9627
+      ],
+      [
+        50.9399,
+        6.9629
+      ],
+      [
+        50.9416,
+        6.9615
+      ],
+      [
+        50.9422,
+        6.9598
+      ],
+      [
+        50.9425,
+        6.956
+      ]
+    ],
+    "wahrzeichen": [
+      {
+        "name": "Kölner Dom",
+        "pos": [
+          50.94133,
+          6.95811
+        ],
+        "hoehe": 157,
+        "form": "zwei_tuerme"
+      },
+      {
+        "name": "Groß St. Martin",
+        "pos": [
+          50.9386,
+          6.962
+        ],
+        "hoehe": 75,
+        "form": "turm"
+      },
+      {
+        "name": "Rathausturm",
+        "pos": [
+          50.9379,
+          6.9591
+        ],
+        "hoehe": 61,
+        "form": "turm"
+      },
+      {
+        "name": "Hohenzollernbrücke",
+        "pos": [
+          50.9413,
+          6.9665
+        ],
+        "hoehe": 25,
+        "form": "tor"
+      }
+    ]
+  }
+}
