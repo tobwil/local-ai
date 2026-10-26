@@ -104,7 +104,11 @@ final class AppState {
         if useBuiltinTools { tools += BuiltinTools.files(ws) }
         if useWebTools { tools += BuiltinTools.web() }
         if settings.browserEnabled { tools += BrowserTools.all() }
-        if useBuiltinTools { tools += SystemTools.all() }
+        if useBuiltinTools {
+            tools += SystemTools.all()
+            tools.append(LessonStore.tool { [weak self] in self?.session.project?.folder })
+            tools.append(session.planTool)
+        }
         if useBuiltinTools {
             tools.append(Documents.tool({ [weak self] in self?.session.workspace ?? Paths.home }) { [weak self] url in
                 self?.session.preview.show(url)
@@ -152,22 +156,29 @@ final class AppState {
 
     // MARK: Skills aus Gesprächen
 
-    /// Entwurf einer SKILL.md aus einem gespeicherten Gespräch (Ablauf, Werkzeuge, Stolperfallen).
-    func draftSkill(fromChat id: String) async throws -> String {
-        guard let json = ChatStore.load(id: id) else { throw ToolError.invalid("Gespräch nicht gefunden") }
+    /// Entwurf einer SKILL.md aus einem oder mehreren gespeicherten Gesprächen (Ablauf, Werkzeuge, Stolperfallen).
+    /// Mehrere Gespräche mit ähnlichem Auftrag ergeben eine allgemeinere Anleitung als ein einzelnes.
+    func draftSkill(fromChats ids: [String]) async throws -> String {
+        let chats = ids.compactMap { ChatStore.load(id: $0) }
+        guard !chats.isEmpty else { throw ToolError.invalid("Gespräch nicht gefunden") }
+        let budget = 14_000 / chats.count
         var transcript = ""
-        for item in json["items"] as? [[String: Any]] ?? [] {
-            switch item["k"] as? String {
-            case "user": transcript += "\n\n[Nutzer] " + String((item["text"] as? String ?? "").prefix(2000))
-            case "assistant":
-                let t = item["text"] as? String ?? ""
-                if !t.isEmpty { transcript += "\n\n[Agent] " + String(t.prefix(1500)) }
-            case "tool":
-                transcript += "\n[Werkzeug \(item["name"] as? String ?? "?") – \(item["state"] as? String ?? "")] "
-                    + String((item["args"] as? String ?? "").prefix(300)).replacingOccurrences(of: "\n", with: " ")
-            default: break
+        for (n, json) in chats.enumerated() {
+            var part = chats.count > 1 ? "\n\n===== Gespräch \(n + 1) von \(chats.count) =====" : ""
+            for item in json["items"] as? [[String: Any]] ?? [] {
+                switch item["k"] as? String {
+                case "user": part += "\n\n[Nutzer] " + String((item["text"] as? String ?? "").prefix(2000))
+                case "assistant":
+                    let t = item["text"] as? String ?? ""
+                    if !t.isEmpty { part += "\n\n[Agent] " + String(t.prefix(1500)) }
+                case "tool":
+                    part += "\n[Werkzeug \(item["name"] as? String ?? "?") – \(item["state"] as? String ?? "")] "
+                        + String((item["args"] as? String ?? "").prefix(300)).replacingOccurrences(of: "\n", with: " ")
+                default: break
+                }
+                if part.count > budget { part += "\n…"; break }
             }
-            if transcript.count > 14_000 { transcript += "\n…"; break }
+            transcript += part
         }
         let system = """
         Du schreibst Skills für einen KI-Agenten (Format wie bei Claude Code). Ein Skill ist eine wiederverwendbare \
@@ -183,10 +194,10 @@ final class AppState {
         ## Ergebnis prüfen
         ## Stolperfallen
         (was im Gespräch schiefging und wie man es vermeidet)
-        Verallgemeinere: keine einmaligen Details, außer sie gehören zum Ablauf. Schreibe auf Deutsch.
+        Verallgemeinere: keine einmaligen Details, außer sie gehören zum Ablauf. Schreibe auf Deutsch.\(chats.count > 1 ? " Es sind mehrere Gespräche mit ähnlichem Auftrag: Beschreibe den gemeinsamen Ablauf, nenne in den Schritten, was sich von Fall zu Fall ändert (z. B. Ordner, Zeitraum), und übernimm Stolperfallen aus allen." : "")
         """
         var md = try await LLMClient.collect(model: selectedModelID, system: system,
-                                             prompt: "Gespräch:\n\(transcript)\n\nSchreibe jetzt die SKILL.md.", maxTokens: 2500)
+                                             prompt: "\(chats.count > 1 ? "Gespräche" : "Gespräch"):\n\(transcript)\n\nSchreibe jetzt die SKILL.md.", maxTokens: 2500)
         md = md.trimmingCharacters(in: .whitespacesAndNewlines)
         if md.hasPrefix("```") {
             md = md.components(separatedBy: "\n").dropFirst().joined(separator: "\n")
@@ -233,6 +244,7 @@ final class AppState {
         var c = AgentContext(skills: plugins.skills, agents: plugins.agents, commands: plugins.commands,
                              customInstructions: settings.customInstructions,
                              maxSteps: settings.maxSteps, maxTokens: settings.maxTokens)
+        c.autoContinue = settings.autoContinue
         c.selfDescription = selectedIsCloud
             ? "Du bist \(selectedModelName) (Cloud) und arbeitest in der Mac-App KI/lokal von KIsruptiv."
             : "Du bist \(selectedModelName) und läufst über die App KI/lokal von KIsruptiv vollständig lokal auf diesem Mac "
@@ -365,7 +377,7 @@ final class AppState {
         let system = """
         Du bist KI/lokal und führst die geplante Aufgabe „\(a.name)“ unbeaufsichtigt aus. Heute ist \(Date().formatted(date: .complete, time: .shortened)).
         Es gibt keine Rückfragen an den Nutzer: nutze die Werkzeuge, erfinde nichts und liefere am Ende das fertige Ergebnis auf Deutsch.
-        \(memory.isEmpty ? "" : "Was du über den Nutzer weißt:\n\(memory.suffix(3000))")
+        \(memory.isEmpty ? "" : "Was du über den Nutzer weißt:\n\(memory.suffix(3000))")\(LessonStore.promptSection(for: nil))
         \(settings.customInstructions)
         """
         return try await AgentSession.runSubAgent(model: selectedModelID, system: system, task: a.prompt, tools: tools, maxSteps: 16,
@@ -488,6 +500,21 @@ final class AppState {
         }
         adjust(&context)
         session.send(model: model, tools: modeTools, context: context)
+    }
+
+    /// Gespräch, dessen Auftrag beim Beenden der App noch lief (nicht das gerade laufende).
+    var interruptedChat: ChatStore.Entry? {
+        _ = session.historyVersion
+        return ChatStore.list().first { $0.laeuft && !($0.id == session.chatID && session.isRunning) }
+    }
+
+    /// Unterbrochenen Auftrag an derselben Stelle fortsetzen (Verlauf, Plan und Projekt kommen aus dem Gespräch).
+    func resume(chatID id: String) {
+        guard !session.isRunning else { notice = "Der Agent arbeitet gerade – bitte kurz warten."; return }
+        session.load(id: id)
+        ChatStore.markStopped(id: id)
+        session.input = Checkpoint.continuePrefix + ", wo du aufgehört hast – die App wurde zwischendurch beendet. Prüfe zuerst kurz den Stand (Plan, zuletzt geänderte Dateien)."
+        send()
     }
 
     /// Ohne Router: das gewählte Modell. Mit Router: das Modell für das Thema der Nachricht, sofern installiert.

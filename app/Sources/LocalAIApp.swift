@@ -50,6 +50,7 @@ enum Main {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated {
+            AppState.shared.session.prepareForQuit()
             AppState.shared.mcp.disconnectAll()
             AppState.shared.server.shutdownSync()
         }

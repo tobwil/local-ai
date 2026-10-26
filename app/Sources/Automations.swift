@@ -3,88 +3,6 @@ import Observation
 import ServiceManagement
 import UserNotifications
 
-/// Geplante Aufgaben: ein Auftrag an den Agenten, der zu festen Zeiten von selbst läuft (z. B. das Morgen-Briefing).
-struct Automation: Codable, Identifiable, Hashable {
-    enum Output: String, Codable, CaseIterable, Identifiable {
-        case notify, speak, file
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .notify: return "Mitteilung"
-            case .speak: return "Vorlesen"
-            case .file: return "Als Datei speichern"
-            }
-        }
-    }
-
-    var id = UUID()
-    var name: String
-    var prompt: String
-    var enabled = true
-    /// Uhrzeit (Stunde/Minute) und Wochentage (1 = Sonntag … 7 = Samstag, leer = täglich).
-    var hour = 7
-    var minute = 30
-    var weekdays: Set<Int> = [2, 3, 4, 5, 6]
-    /// Alternativ: alle N Minuten (0 = aus, dann gilt die Uhrzeit).
-    var intervalMinutes = 0
-    var outputs: Set<Output> = [.notify]
-    /// Darf schreiben/Shell/Browser-Aktionen ausführen (läuft unbeaufsichtigt, also ohne Rückfrage).
-    var allowActions = false
-    var lastRun: Date?
-
-    /// Nächster Termin nach `date`.
-    func nextRun(after date: Date) -> Date? {
-        guard enabled else { return nil }
-        if intervalMinutes > 0 {
-            return (lastRun ?? date.addingTimeInterval(-Double(intervalMinutes) * 60)).addingTimeInterval(Double(intervalMinutes) * 60)
-        }
-        let cal = Calendar.current
-        for offset in 0..<8 {
-            guard let day = cal.date(byAdding: .day, value: offset, to: cal.startOfDay(for: date)),
-                  let at = cal.date(bySettingHour: hour, minute: minute, second: 0, of: day) else { continue }
-            if at <= date { continue }
-            if weekdays.isEmpty || weekdays.contains(cal.component(.weekday, from: at)) { return at }
-        }
-        return nil
-    }
-
-    var scheduleText: String {
-        if intervalMinutes > 0 { return "alle \(intervalMinutes) min" }
-        let days: String
-        switch weekdays {
-        case []: days = "täglich"
-        case [2, 3, 4, 5, 6]: days = "Mo–Fr"
-        case [1, 7]: days = "Wochenende"
-        default:
-            let names = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"]
-            days = weekdays.sorted { ($0 + 5) % 7 < ($1 + 5) % 7 }.map { names[$0 - 1] }.joined(separator: ", ")
-        }
-        return "\(days) um \(String(format: "%02d:%02d", hour, minute))"
-    }
-
-    static func briefing(location: String) -> Automation {
-        Automation(name: "Morgen-Briefing", prompt: """
-        Erstelle mein Morgen-Briefing für heute. Nutze die Werkzeuge:
-        1. Termine heute (calendar_events, days_ahead 0) – Uhrzeit und Titel.
-        2. Fällige oder überfällige Erinnerungen (reminders_list).
-        3. Bis zu 5 wichtige ungelesene E-Mails (mail_recent mit unread_only) – nur Absender und Betreff.
-        4. Wetter heute in \(location) (web_search).
-        5. Drei wichtige Nachrichten des Tages (fetch_url https://www.tagesschau.de).
-        Fasse alles kurz, freundlich und übersichtlich zusammen. Lass Abschnitte weg, zu denen es nichts gibt.
-        """, hour: 7, minute: 30, weekdays: [2, 3, 4, 5, 6], outputs: [.notify, .speak])
-    }
-}
-
-struct AutomationRun: Codable, Identifiable {
-    var id = UUID()
-    let automationID: UUID
-    let name: String
-    let started: Date
-    var finished: Date?
-    var result: String
-    var failed = false
-}
-
 @MainActor @Observable
 final class AutomationCenter: NSObject {
     static let file = Paths.base.appendingPathComponent("automations.json")
@@ -134,6 +52,11 @@ final class AutomationCenter: NSObject {
     func run(_ automation: Automation) async {
         guard let runner, !running.contains(automation.id) else { return }
         running.insert(automation.id)
+        if automation.isWatch {
+            await runWatch(automation, runner: runner)
+            running.remove(automation.id)
+            return
+        }
         var record = AutomationRun(automationID: automation.id, name: automation.name, started: Date(), result: "")
         do {
             record.result = try await runner(automation)
@@ -148,6 +71,44 @@ final class AutomationCenter: NSObject {
         running.remove(automation.id)
         save()
         deliver(record, outputs: automation.outputs)
+    }
+
+    /// Überwachung: Der Prüfbefehl läuft ohne Modell (Sekundenbruchteile, kein Speicher, kein Akku). Nur wenn der
+    /// Auslöser greift, arbeitet der Agent mit der Ausgabe – oder es kommt ohne Auftrag direkt eine Mitteilung.
+    private func runWatch(_ a: Automation, runner: (Automation) async throws -> String) async {
+        let started = Date()
+        let raw: String
+        // Den Befehl hat der Nutzer selbst geschrieben – er läuft wie im Terminal (ohne Agenten-Sandbox).
+        do { raw = try await Shell.run(a.watchCommand, cwd: Paths.home, timeout: 60) } catch { raw = "Exit-Code 1\n\(error.localizedDescription)" }
+        let (status, output) = WatchCheck.parse(raw)
+        let outcome = WatchCheck.evaluate(trigger: a.watchTrigger, status: status, output: output, previous: a.lastWatchOutput)
+        ActionLog.log(context: "Überwachung: \(a.name)", tool: "run_shell", source: "Automation", arguments: a.watchCommand,
+                      approval: "unbeaufsichtigt", ok: status == 0, started: started, result: output)
+        if let i = automations.firstIndex(where: { $0.id == a.id }) {
+            automations[i].lastRun = started
+            automations[i].lastCheck = started
+            automations[i].lastCheckNote = outcome.note
+            automations[i].lastWatchOutput = String(output.prefix(20_000))
+        }
+        save()
+        guard outcome.fired else { return }
+        var record = AutomationRun(automationID: a.id, name: a.name, started: started, result: "")
+        if a.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let shown = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            record.result = "\(a.name): \(outcome.note)" + (shown.isEmpty ? "" : "\n\n" + String(shown.prefix(2_000)))
+        } else {
+            var task = a
+            task.prompt = WatchCheck.prompt(for: a, output: output, previous: a.lastWatchOutput)
+            do { record.result = try await runner(task) } catch {
+                record.result = "Fehler: \(error.localizedDescription)"
+                record.failed = true
+            }
+        }
+        record.finished = Date()
+        runs.insert(record, at: 0)
+        if runs.count > 50 { runs.removeLast(runs.count - 50) }
+        save()
+        deliver(record, outputs: a.outputs)
     }
 
     private func deliver(_ run: AutomationRun, outputs: Set<Automation.Output>) {

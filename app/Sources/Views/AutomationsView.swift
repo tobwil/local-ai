@@ -36,6 +36,17 @@ struct AutomationsView: View {
                         Text("Termine, Erinnerungen, ungelesene Mails, Wetter und Nachrichten – als Mitteilung und vorgelesen. Schaltet den Zugriff auf Kalender & Mail ein (macOS fragt beim ersten Mal).")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    Divider()
+                    HStack {
+                        Image(systemName: "eye.circle.fill").foregroundStyle(Theme.primary)
+                        Text("Überwachen").font(.callout.weight(.medium))
+                        ForEach(Automation.watchTemplates, id: \.name) { t in
+                            Button(t.name) { editing = Automation(name: t.name, prompt: t.prompt, intervalMinutes: t.intervalMinutes,
+                                                                  outputs: t.outputs, watchCommand: t.watchCommand, watchTrigger: t.watchTrigger) }
+                        }
+                    }
+                    Text("Ein Prüfbefehl läuft im Takt ohne Modell – kostet kaum Strom und keinen Speicher. Erst wenn sich etwas ändert, etwas fehlschlägt oder der Befehl etwas meldet, kommt eine Mitteilung oder der Agent wertet aus.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 ForEach(center.automations) { a in
@@ -46,7 +57,12 @@ struct AutomationsView: View {
                                 HStack(spacing: 6) {
                                     Chip(text: a.scheduleText, systemImage: "clock")
                                     ForEach(Array(a.outputs).sorted { $0.rawValue < $1.rawValue }) { Chip(text: $0.label) }
+                                    if a.isWatch { Chip(text: "Überwachung", systemImage: "eye") }
                                     if a.allowActions { Chip(text: "darf handeln", systemImage: "flame", tint: .orange) }
+                                }
+                                if a.isWatch, let check = a.lastCheck {
+                                    Text("Zuletzt geprüft \(check.formatted(date: .omitted, time: .shortened)): \(a.lastCheckNote ?? "–")")
+                                        .font(.caption).foregroundStyle(.secondary)
                                 }
                                 if let last = a.lastRun {
                                     Text("Zuletzt: \(last.formatted(date: .abbreviated, time: .shortened)) · nächstes Mal: \(a.nextRun(after: Date())?.formatted(date: .abbreviated, time: .shortened) ?? "–")")
@@ -99,15 +115,26 @@ private struct AutomationEditor: View {
     @State var automation: Automation
     @State private var time = Date()
     @State private var useInterval = false
+    @State private var watch = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Automation").font(.title2.bold())
             Form {
                 TextField("Name", text: $automation.name)
+                Toggle("Überwachen: erst einen Prüfbefehl ausführen (ohne Modell)", isOn: $watch)
+                if watch {
+                    TextField("Prüfbefehl (zsh)", text: $automation.watchCommand, prompt: Text("curl -s https://… | grep Preis"))
+                        .font(.callout.monospaced())
+                    Picker("Anschlagen, wenn", selection: $automation.watchTrigger) {
+                        ForEach(WatchTrigger.allCases) { Text($0.label).tag($0) }
+                    }
+                    Text("Der Befehl läuft in deinem Benutzerordner, ohne Rückfrage, wie im Terminal. Ohne Auftrag unten kommt beim Anschlagen nur eine Mitteilung mit der Ausgabe; mit Auftrag bekommt der Agent die Ausgabe (bei „geändert“ auch den vorherigen Stand).")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 VStack(alignment: .leading) {
-                    Text("Auftrag an den Agenten")
-                    TextEditor(text: $automation.prompt).font(.callout).frame(minHeight: 120)
+                    Text(watch ? "Auftrag an den Agenten, wenn die Überwachung anschlägt (optional)" : "Auftrag an den Agenten")
+                    TextEditor(text: $automation.prompt).font(.callout).frame(minHeight: watch ? 80 : 120)
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
                 }
                 Toggle("Wiederholen in festem Abstand statt zu einer Uhrzeit", isOn: $useInterval)
@@ -149,11 +176,17 @@ private struct AutomationEditor: View {
                     automation.hour = c.hour ?? 7
                     automation.minute = c.minute ?? 30
                     if !useInterval { automation.intervalMinutes = 0 } else { automation.intervalMinutes = max(automation.intervalMinutes, 15) }
+                    if !watch { automation.watchCommand = "" }
+                    // Neuer Prüfbefehl → neuer Vergleichsstand (sonst schlüge „geändert“ sofort an).
+                    let stored = app.automations.automations.first { $0.id == automation.id }
+                    if stored?.watchCommand != automation.watchCommand { automation.lastWatchOutput = nil; automation.lastCheckNote = nil }
+                    else if let stored { automation.lastWatchOutput = stored.lastWatchOutput; automation.lastCheck = stored.lastCheck; automation.lastCheckNote = stored.lastCheckNote }
                     app.automations.upsert(automation)
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(automation.prompt.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(watch ? automation.watchCommand.trimmingCharacters(in: .whitespaces).isEmpty
+                                : automation.prompt.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(22)
@@ -161,6 +194,7 @@ private struct AutomationEditor: View {
         .onAppear {
             time = Calendar.current.date(bySettingHour: automation.hour, minute: automation.minute, second: 0, of: Date()) ?? Date()
             useInterval = automation.intervalMinutes > 0
+            watch = automation.isWatch
         }
     }
 }

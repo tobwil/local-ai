@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -159,7 +160,18 @@ struct SettingsView: View {
                 Toggle("Notbremse: bei zerstörerischen Aktionen trotzdem fragen (sudo, rm -rf, force-push, Schreiben außerhalb ~)",
                        isOn: Bindable(app.session).dangerGuard)
                     .disabled(!app.session.autoApprove)
+                Picker(selection: $settings.shellSandbox) {
+                    ForEach(ShellSandbox.Mode.allCases) { Text($0.label).tag($0) }
+                } label: {
+                    Label("Shell in der Sandbox", systemImage: "shield.lefthalf.filled")
+                }
+                Text("In der Sandbox darf ein Shell-Befehl nur im Arbeitsordner, in /tmp und in Cache-Ordnern schreiben; ~/.ssh, ~/.aws, der Schlüsselbund und andere Zugangsdaten sind gesperrt, Shell-Startdateien und ~/.kilokal geschützt. Befehle, die du einzeln freigibst, laufen im Standard ohne Sandbox. API-Schlüssel und private Schlüssel in Werkzeug-Ergebnissen blendet die App immer aus.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Stepper("Höchstens \(settings.maxSteps) Schritte pro Aufgabe", value: $settings.maxSteps, in: 4...100, step: 4)
+                Stepper(settings.autoContinue == 0 ? "Am Schrittlimit immer pausieren" : "Am Schrittlimit bis zu \(settings.autoContinue)× von selbst weitermachen",
+                        value: $settings.autoContinue, in: 0...20)
+                Text("Für lange Aufträge (z. B. über Nacht): Der Agent arbeitet weiter, hält seinen Plan mit update_plan fest und der Mac schläft währenddessen nicht ein. Wird die App mittendrin beendet, bietet sie beim nächsten Start an, den Auftrag fortzusetzen.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Stepper("Antwortlänge bis \(settings.maxTokens) Tokens", value: $settings.maxTokens, in: 1024...32768, step: 1024)
                 VStack(alignment: .leading) {
                     Text("Eigene Anweisungen (gelten für jedes Gespräch)")
@@ -168,6 +180,8 @@ struct SettingsView: View {
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
                 }
             }
+
+            LessonsSection()
 
             Section("Cloud-Modelle (optional)") {
                 SecureField("Anthropic-API-Schlüssel", text: $settings.anthropicKey)
@@ -240,5 +254,65 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Gedächtnis (Fakten über den Nutzer) und Lektionen (Regeln aus Korrekturen und Fehlern) – sichtbar, ergänzbar, löschbar.
+private struct LessonsSection: View {
+    @Environment(AppState.self) private var app
+    @State private var lessons: [Lesson] = []
+    @State private var newLesson = ""
+    @State private var forProject = false
+
+    var body: some View {
+        Section("Gedächtnis & Lektionen") {
+            Text("Lektionen sind Regeln, die der Agent aus deinen Korrekturen und aus behobenen Fehlern gewinnt (Werkzeug learn_lesson) und ab dann bei jeder Anfrage beachtet – überall oder nur im jeweiligen Projekt. Fakten über dich merkt er sich getrennt davon mit remember.")
+                .font(.caption).foregroundStyle(.secondary)
+            if lessons.isEmpty {
+                Text("Noch keine Lektionen.").foregroundStyle(.secondary)
+            }
+            ForEach(lessons) { l in
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(l.text)
+                        HStack(spacing: 6) {
+                            Chip(text: l.folder.map { "Projekt " + URL(fileURLWithPath: $0).lastPathComponent } ?? "überall",
+                                 systemImage: l.folder == nil ? "globe" : "folder")
+                            Text("\(l.source) · \(l.created.formatted(date: .abbreviated, time: .omitted))").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Button { LessonStore.remove(l.id); reload() } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless).help("Lektion löschen")
+                }
+            }
+            HStack {
+                TextField("Neue Lektion, z. B. „Rechnungen immer als PDF in ~/Belege ablegen“", text: $newLesson)
+                if app.session.project?.folder != nil {
+                    Toggle("nur dieses Projekt", isOn: $forProject).toggleStyle(.checkbox)
+                }
+                Button("Hinzufügen") {
+                    LessonStore.add(newLesson, folder: forProject ? app.session.project?.folder : nil, source: "Nutzer")
+                    newLesson = ""
+                    reload()
+                }
+                .disabled(newLesson.trimmingCharacters(in: .whitespaces).count < 8)
+            }
+            HStack {
+                Button("Gedächtnis-Datei öffnen") {
+                    if !FileManager.default.fileExists(atPath: SystemTools.memoryFile.path) {
+                        try? FileManager.default.createDirectory(at: Paths.base, withIntermediateDirectories: true)
+                        try? "".write(to: SystemTools.memoryFile, atomically: true, encoding: .utf8)
+                    }
+                    NSWorkspace.shared.open(SystemTools.memoryFile)
+                }
+                Text("~/.kilokal/memory.md · Lektionen: ~/.kilokal/lessons.json").font(.caption).foregroundStyle(.tertiary)
+            }
+        }
+        .onAppear(perform: reload)
+    }
+
+    private func reload() {
+        lessons = LessonStore.all().sorted { $0.created > $1.created }
     }
 }

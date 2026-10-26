@@ -59,7 +59,7 @@ enum WorkMode: String, CaseIterable, Identifiable {
         }
     }
 
-    private static let chatTools: Set<String> = ["web_search", "fetch_url", "search_documents", "remember", "forget",
+    private static let chatTools: Set<String> = ["web_search", "fetch_url", "search_documents", "remember", "forget", "learn_lesson",
                                                  "ask_expert", "look_at_screen", "open_canvas", "create_document", "transcribe"]
     private static let notForCode: Set<String> = ["Kalender", "Erinnerungen", "Kontakte", "Mail", "Browser"]
 

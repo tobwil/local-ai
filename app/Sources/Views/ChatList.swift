@@ -140,6 +140,8 @@ struct SkillFromChatSheet: View {
     @Environment(\.dismiss) private var dismiss
     let chatID: String
     let chatTitle: String
+    /// Weitere Gespräche mit ähnlichem Auftrag – fließen in denselben Entwurf ein.
+    var moreChats: [String] = []
     @State private var draft = ""
     @State private var working = true
     @State private var error: String?
@@ -147,7 +149,7 @@ struct SkillFromChatSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Als Skill speichern").font(.title2.bold())
-            Text("Aus „\(chatTitle)“ wird eine Anleitung, die der Agent künftig bei ähnlichen Aufgaben selbst lädt. Prüfe den Entwurf und passe ihn bei Bedarf an.")
+            Text("Aus „\(chatTitle)“\(moreChats.isEmpty ? "" : " und \(moreChats.count) ähnlichen Gesprächen") wird eine Anleitung, die der Agent künftig bei ähnlichen Aufgaben selbst lädt. Prüfe den Entwurf und passe ihn bei Bedarf an.")
                 .font(.callout).foregroundStyle(.secondary)
             if working {
                 HStack { ProgressView().controlSize(.small); Text("Das Modell schreibt den Entwurf …").foregroundStyle(.secondary) }
@@ -177,7 +179,7 @@ struct SkillFromChatSheet: View {
         .padding(22)
         .frame(width: 680)
         .task {
-            do { draft = try await app.draftSkill(fromChat: chatID) } catch { self.error = error.localizedDescription }
+            do { draft = try await app.draftSkill(fromChats: [chatID] + moreChats) } catch { self.error = error.localizedDescription }
             working = false
         }
     }

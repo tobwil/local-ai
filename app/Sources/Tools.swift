@@ -102,7 +102,8 @@ enum BuiltinTools {
                                           ("include", "string", "Nur Dateien mit diesem Muster, z. B. '*.py'")], required: ["pattern"]),
                       needsApproval: false, source: "Eingebaut") { args in
                 let root = resolve(args["path"] as? String ?? ".", in: workspace())
-                var cmd = ["grep", "-rnIE", "--exclude-dir=.git", "--exclude-dir=node_modules", "--exclude-dir=build", "-m", "20"]
+                var cmd = ["grep", "-rnIE", "--exclude-dir=.git", "--exclude-dir=node_modules", "--exclude-dir=build", "-m", "20",
+                           "--exclude-dir=.ssh", "--exclude-dir=.gnupg", "--exclude-dir=.aws", "--exclude-dir=Keychains"]
                 if let inc = args["include"] as? String { cmd.append("--include=\(inc)") }
                 cmd += ["--", try string(args, "pattern"), root.path]
                 let out = try await Shell.exec(cmd, cwd: root)
@@ -170,7 +171,11 @@ enum BuiltinTools {
                       description: "Führt einen Shell-Befehl (zsh) im Arbeitsordner aus. Timeout 120 s.",
                       parameters: schema([("command", "string", "Befehl")], required: ["command"]),
                       needsApproval: true, source: "Eingebaut") { args in
-                try await Shell.run(try string(args, "command"), cwd: workspace())
+                // Ohne Freigabe des Nutzers (YOLO, Automationen) in der Sandbox: Schreiben nur im Arbeitsordner.
+                let sandboxed = ShellSandbox.available && ShellSandbox.applies(approved: args[ShellSandbox.approvedKey] as? Bool ?? false)
+                let out = try await Shell.run(try string(args, "command"), cwd: workspace(), sandboxed: sandboxed)
+                if sandboxed, let hint = ShellSandbox.hint(for: out) { return out + "\n\n" + hint }
+                return out
             },
         ]
     }
@@ -232,8 +237,10 @@ enum ToolError: LocalizedError {
 
 enum Shell {
     /// Befehl über die Login-Shell (PATH des Nutzers).
-    static func run(_ command: String, cwd: URL, timeout: TimeInterval = 120) async throws -> String {
-        let out = try await exec(["/bin/zsh", "-l", "-c", command], cwd: cwd, timeout: timeout, withStatus: true)
+    /// `sandboxed`: in der Sandbox (siehe ShellSandbox) – Schreiben nur im Arbeitsordner `cwd`.
+    static func run(_ command: String, cwd: URL, timeout: TimeInterval = 120, sandboxed: Bool = false) async throws -> String {
+        let argv = sandboxed ? ShellSandbox.argv(command: command, workspace: cwd) : ["/bin/zsh", "-l", "-c", command]
+        let out = try await exec(argv, cwd: cwd, timeout: timeout, withStatus: true)
         return out
     }
 
