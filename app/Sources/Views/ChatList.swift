@@ -71,7 +71,10 @@ struct ChatList: View {
             if !session.isRunning { session.load(id: e.id) }
         } label: {
             VStack(alignment: .leading, spacing: 2) {
-                Text(e.title).lineLimit(1).fontWeight(active ? .semibold : .regular)
+                HStack(spacing: 4) {
+                    if e.angeheftet { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Theme.gold) }
+                    Text(e.title).lineLimit(1).fontWeight(active ? .semibold : .regular)
+                }
                 if let snippet = e.snippet {
                     Text(snippet).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
@@ -85,6 +88,7 @@ struct ChatList: View {
         .buttonStyle(.plain)
         .listRowBackground(active ? RoundedRectangle(cornerRadius: 6).fill(Theme.primary.opacity(0.18)) : nil)
         .contextMenu {
+            Button(e.angeheftet ? "Lösen" : "Anheften") { session.anheften(chatID: e.id, !e.angeheftet) }
             Button("Umbenennen …") { newTitle = e.title; renaming = e }
             Button("Als Skill speichern …") { skillFrom = e }
             Button("Als Assistent speichern") { saveAssistant(e) }
@@ -119,10 +123,12 @@ struct ChatList: View {
         var order: [String] = []
         var map: [String: [ChatStore.Entry]] = [:]
         for e in entries {
-            let b = bucket(e.date)
+            let b = e.angeheftet ? "Angeheftet" : bucket(e.date)
             if map[b] == nil { order.append(b) }
             map[b, default: []].append(e)
         }
+        // Angeheftete Gespräche immer ganz oben
+        if let i = order.firstIndex(of: "Angeheftet"), i > 0 { order.remove(at: i); order.insert("Angeheftet", at: 0) }
         return order.map { ($0, map[$0]!) }
     }
 }

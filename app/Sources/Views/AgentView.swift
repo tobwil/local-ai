@@ -6,6 +6,7 @@ struct AgentView: View {
     @Environment(AppState.self) private var app
     @AppStorage("previewFraction") private var previewFraction = 0.45
     @AppStorage("chatListOpen") private var chatListOpen = true
+    @AppStorage("projektLeiste") private var projektLeiste = true
     @AppStorage("chatListWidth") private var chatListWidth = 260.0
     @State private var dragStartWidth: Double?
     @State private var skillSheet = false
@@ -39,9 +40,17 @@ struct AgentView: View {
             ToolbarItem {
                 let preview = app.session.preview
                 Button { withAnimation { preview.isOpen.toggle() } } label: {
-                    Label("Vorschau", systemImage: preview.isOpen ? "sidebar.right" : "rectangle.righthalf.inset.filled")
+                    Label("Vorschau", systemImage: preview.isOpen ? "eye.fill" : "eye")
                 }
                 .help(preview.files.isEmpty ? "Vorschau (Seiten, Spiele, Bilder, Dokumente des Agenten)" : "Vorschau – \(preview.files.count) Datei(en)")
+            }
+            ToolbarItem {
+                Button {
+                    withAnimation {
+                        if app.session.preview.isOpen { app.session.preview.isOpen = false; projektLeiste = true } else { projektLeiste.toggle() }
+                    }
+                } label: { Label("Projekt", systemImage: "sidebar.right") }
+                .help("Projekt-Leiste: Ordner, Starten, Kontext, Ausgaben und Dateien")
             }
             ToolbarItem {
                 Button { app.session.newChat() } label: { Label("Neues Gespräch", systemImage: "square.and.pencil") }
@@ -65,6 +74,10 @@ struct AgentView: View {
                             previewFraction = min(max(1 - v.location.x / geo.size.width, 0.25), 0.7)
                         })
                     PreviewPane().frame(width: previewWidth)
+                } else if projektLeiste {
+                    // Ohne offene Vorschau: Projekt-Leiste (Ordner, Starten, Kontext, Ausgaben, Dateien)
+                    Rectangle().fill(.separator).frame(width: 1)
+                    ProjectPanel().frame(width: min(320, max(260, geo.size.width * 0.3)))
                 }
             }
             .coordinateSpace(name: "agent")
@@ -199,13 +212,7 @@ private struct ItemView: View {
                             }
                         }
                     }
-                    if !text.isEmpty {
-                        Text(text)
-                            .textSelection(.enabled)
-                            .padding(.horizontal, 14).padding(.vertical, 10)
-                            .foregroundStyle(.white)
-                            .background(Theme.brand, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    }
+                    if !text.isEmpty { NutzerText(text: text) }
                 }
             }
         case let .assistant(text, thinking, stats):
@@ -236,7 +243,7 @@ private struct ItemView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         case let .tool(name, source, arguments, state, result):
             ToolCard(id: item.id, name: name, source: source, arguments: arguments, state: state, result: result)
-        case let .error(message) where message.hasPrefix(AgentSession.stepLimitPrefix):
+        case let .error(message) where message.hasPrefix(AgentSession.stepLimitPrefix) || message.hasPrefix("Schrittlimit erreicht"):
             HStack(spacing: 10) {
                 Label(message, systemImage: "pause.circle.fill").foregroundStyle(.orange).font(.callout)
                 if !app.session.isRunning && item.id == app.session.items.last?.id {
@@ -590,6 +597,27 @@ private struct Composer: View {
         panel.directoryURL = app.session.workspace
         panel.prompt = "Als Arbeitsordner wählen"
         if panel.runModal() == .OK, let url = panel.url { app.session.workspace = url }
+    }
+}
+
+/// Eigene Nachricht; lange Aufträge (z. B. aus dem Terminal) zunächst eingeklappt.
+private struct NutzerText: View {
+    let text: String
+    @State private var offen = false
+
+    var body: some View {
+        let lang = text.count > 420
+        VStack(alignment: .trailing, spacing: 6) {
+            Text(lang && !offen ? String(text.prefix(280)).trimmingCharacters(in: .whitespacesAndNewlines) + " …" : text)
+                .textSelection(.enabled)
+            if lang {
+                Button(offen ? "Weniger anzeigen" : "Ganzen Auftrag anzeigen (\(text.count) Zeichen)") { withAnimation(.snappy) { offen.toggle() } }
+                    .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.85))
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .foregroundStyle(.white)
+        .background(Theme.brand, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

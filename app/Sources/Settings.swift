@@ -59,7 +59,9 @@ final class AppSettings {
         searchProvider = WebSearch.provider
         searxngURL = d.string(forKey: "searxngURL") ?? ""
         braveKey = Keychain.get("braveKey") ?? ""
-        maxSteps = d.object(forKey: "maxSteps") as? Int ?? 24
+        // Früher 24 Schritte – zu knapp für echte Aufgaben; einmalig auf 50 anheben (Code-Projekte bekommen das Doppelte).
+        if !d.bool(forKey: "maxStepsV2") { if (d.object(forKey: "maxSteps") as? Int ?? 24) <= 24 { d.set(50, forKey: "maxSteps") }; d.set(true, forKey: "maxStepsV2") }
+        maxSteps = d.object(forKey: "maxSteps") as? Int ?? 50
         customInstructions = d.string(forKey: "customInstructions") ?? ""
         maxTokens = d.object(forKey: "maxTokens") as? Int ?? 8192
         routerEnabled = d.bool(forKey: "routerEnabled")
@@ -94,6 +96,7 @@ enum ChatStore {
         let date: Date
         var mode: WorkMode = .work
         var projectID: UUID?
+        var angeheftet = false
         /// Kleingeschriebener Text (Titel, Nachrichten, Antworten) für die Suche.
         var searchText = ""
         /// Fundstelle zur Suchanfrage (nur in Suchergebnissen).
@@ -131,6 +134,7 @@ enum ChatStore {
         return Entry(id: id, title: title, date: Date(timeIntervalSince1970: json["updated"] as? Double ?? 0),
                      mode: (json["mode"] as? String).flatMap(WorkMode.init(rawValue:)) ?? .work,
                      projectID: (json["project"] as? String).flatMap(UUID.init(uuidString:)),
+                     angeheftet: json["angeheftet"] as? Bool ?? false,
                      searchText: text.lowercased())
     }
 
@@ -165,6 +169,12 @@ enum ChatStore {
     static func rename(id: String, to title: String) {
         guard var json = load(id: id) else { return }
         json["customTitle"] = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        save(id: id, json)
+    }
+
+    static func anheften(id: String, _ an: Bool) {
+        guard var json = load(id: id) else { return }
+        json["angeheftet"] = an
         save(id: id, json)
     }
 

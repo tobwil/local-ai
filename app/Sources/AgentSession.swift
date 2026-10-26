@@ -69,6 +69,12 @@ final class AgentSession {
     }
     private(set) var isRunning = false
     private(set) var liveTokPerSec: Double = 0
+    /// Tatsächliche Eingabelänge der letzten Anfrage (laut Engine), 0 = noch unbekannt.
+    private(set) var lastPromptTokens = 0
+    /// Kontextfenster der lokalen Engine (oMLX `max_context_window`, zählt nur die Eingabe).
+    static let localWindow = 32_768
+    /// Ab hier verdichten: Platz für die nächste Antwort samt Werkzeug-Ergebnis (≤ 6 000 Zeichen) muss bleiben.
+    static let compactAtTokens = 24_000
     /// Beginn des aktuellen Modell-Schritts – für die Anzeige „liest Eingabe … 12 s“.
     private(set) var stepStarted: Date?
     private(set) var chatID = UUID().uuidString
@@ -97,8 +103,28 @@ final class AgentSession {
     @ObservationIgnored private var reviews = 0
     @ObservationIgnored private var lastReviewFailed = false
     @ObservationIgnored private var nudges = 0
+    @ObservationIgnored private var recentCalls: [String] = []
     @ObservationIgnored private var userTask = ""
     static let qualityPrefix = "Qualitäts-Check"
+
+    /// Ungefähre Länge des Verlaufs in Zeichen (für die Kontext-Anzeige; ≈ Zeichen / 3,5 Tokens).
+    var contextChars: Int { Self.totalLength(history) }
+
+    /// Dateien, die der Agent in diesem Gespräch erstellt oder geändert hat (neueste zuerst, ohne Doppelte).
+    var outputs: [URL] {
+        var seen = Set<String>(), out: [URL] = []
+        for item in items.reversed() {
+            guard case let .tool(name, _, args, .done, _) = item.kind else { continue }
+            let url: URL?
+            if let u = PreviewStore.writtenPath(tool: name, arguments: args, workspace: workspace) { url = u }
+            else if ["create_document", "open_canvas"].contains(name),
+                    let p = (try? JSONSerialization.jsonObject(with: Data(args.utf8)) as? [String: Any])?["path"] as? String {
+                url = BuiltinTools.resolve(p, in: workspace)
+            } else { url = nil }
+            if let url, FileManager.default.fileExists(atPath: url.path), seen.insert(url.path).inserted { out.append(url) }
+        }
+        return out
+    }
 
     /// Erfolgreiche Werkzeug-Aufrufe im Gespräch – ab einigen lohnt sich der Vorschlag „Als Skill speichern“.
     var successfulToolCalls: Int {
@@ -181,8 +207,10 @@ final class AgentSession {
         stop()
         items = []
         history = []
+        lastPromptTokens = 0
         chatID = UUID().uuidString
         customTitle = nil
+        angeheftet = false
         preview.clear()
     }
 
@@ -238,6 +266,7 @@ final class AgentSession {
         reviews = 0
         lastReviewFailed = false
         nudges = 0
+        recentCalls = []
         userTask = String(shown.prefix(1500))
         isRunning = true
         runTask = Task {
@@ -345,9 +374,14 @@ final class AgentSession {
             if Task.isCancelled { return }
             // Lokale Modelle: Verlauf rechtzeitig verdichten, damit die Eingabe in den Speicher passt (24 GB).
             let local = !CloudModels.isCloud(model)
-            // Erst ab ~12k Tokens verdichten, dann deutlich darunter (≈ 6k), damit das einmalige Neu-Einlesen ohne Cache
-            // in den Speicher passt und der Cache danach wieder lange trägt (24 GB: nur ~0,6 GB Luft neben dem Modell).
-            if local, Self.totalLength(history) > 22_000 { compactHistory(budget: 9_000) }
+            // Solange der Verlauf nur wächst, liest die Engine pro Schritt nur das Neue ein (Prefix-Cache) – so trägt das
+            // 32k-Fenster auch auf 24 GB. Erst kurz vor dem Fenster verdichten, dann deutlich darunter (≈ 6k Tokens), damit
+            // das einmalige Neu-Einlesen ohne Cache in den Speicher passt. Lehnt der Speicherwächter trotzdem ab
+            // (kalter Cache, z. B. altes Gespräch wieder geöffnet), greift unten die Wiederholung mit Kürzen.
+            if local, lastPromptTokens > Self.compactAtTokens || Self.totalLength(history) > 90_000 {
+                compactHistory(budget: 9_000)
+                lastPromptTokens = 0
+            }
             let itemID = UUID()
             items.append(Item(id: itemID, kind: .assistant(text: "", thinking: "", stats: nil)))
             var text = "", thought = ""
@@ -398,6 +432,8 @@ final class AgentSession {
             let decode = tFirst.map { end.timeIntervalSince($0) } ?? 0
             let stats = Stats(model: model, tokens: tokens, tokPerSec: decode > 0 ? Double(max(tokens - 1, 0)) / decode : 0,
                               promptTokens: prompt, ttft: (tFirst ?? end).timeIntervalSince(t0))
+            if prompt > 0 { lastPromptTokens = prompt }
+            memoryRetries = 0
             if text.isEmpty && thought.isEmpty && !calls.isEmpty {
                 items.removeAll { $0.id == itemID }
             } else {
@@ -465,6 +501,14 @@ final class AgentSession {
             for call in calls {
                 if Task.isCancelled { return }
                 var result = await execute(call, tools: tools)
+                // Schleife? Derselbe Aufruf mit denselben Argumenten zum dritten Mal → Hinweis statt stur weiter
+                let signatur = call.name + "|" + call.arguments
+                recentCalls.append(signatur)
+                if recentCalls.count > 6 { recentCalls.removeFirst() }
+                if recentCalls.filter({ $0 == signatur }).count >= 3 {
+                    result += "\n\n(Hinweis der App: Du rufst dieses Werkzeug zum dritten Mal mit genau denselben Argumenten auf – das Ergebnis ändert sich nicht. Ändere den Ansatz: anderes Werkzeug, andere Datei/Zeilen, oder fasse zusammen, was du weißt.)"
+                    recentCalls.removeAll()
+                }
                 // Kurz vor dem Schrittlimit daran erinnern, zum Ende zu kommen.
                 let left = context.maxSteps - step - 1
                 if left <= 3 { result += "\n\n(Hinweis der App: noch \(left) Schritt\(left == 1 ? "" : "e") – bring die Aufgabe jetzt zu Ende.)" }
@@ -474,7 +518,7 @@ final class AgentSession {
             // Das ändert nur die letzte Nachricht, der Prompt-Cache davor bleibt gültig.
             if local, rawBlocks == nil { history[assistantIndex] = Self.slimToolCalls(history[assistantIndex]) }
         }
-        items.append(Item(kind: .error(Self.stepLimitPrefix + " (\(context.maxSteps) Schritte) – der Agent ist noch nicht fertig.")))
+        items.append(Item(kind: .error(Self.stepLimitPrefix + " \(context.maxSteps) Schritten – der Agent ist noch nicht fertig. Mit „Weitermachen“ geht es an derselben Stelle weiter.")))
     }
 
     private func execute(_ call: LLMClient.ToolCall, tools: [AgentTool]) async -> String {
@@ -535,7 +579,7 @@ final class AgentSession {
         if let i = items.firstIndex(where: { $0.id == id }) { items[i].kind = kind }
     }
 
-    static let stepLimitPrefix = "Schrittlimit erreicht"
+    static let stepLimitPrefix = "Pause nach"
 
     // MARK: Verlauf verdichten
 
@@ -598,7 +642,7 @@ final class AgentSession {
         return m
     }
 
-    private static func totalLength(_ history: [[String: Any]]) -> Int { history.reduce(0) { $0 + length(of: $1) } }
+    static func totalLength(_ history: [[String: Any]]) -> Int { history.reduce(0) { $0 + length(of: $1) } }
 
     private static func length(of message: [String: Any]) -> Int {
         var n = (message["content"] as? String)?.count ?? 600   // Bilder/Teile grob schätzen
@@ -717,6 +761,8 @@ final class AgentSession {
 
     /// Vom Nutzer vergebener Titel (sonst: Anfang der ersten Nachricht).
     private(set) var customTitle: String?
+    /// Angeheftet: steht in der Gesprächsliste oben (z. B. das „Haupt-Gespräch“ eines Projekts).
+    private(set) var angeheftet = false
 
     var title: String {
         if let customTitle, !customTitle.isEmpty { return customTitle }
@@ -727,6 +773,12 @@ final class AgentSession {
     func rename(chatID id: String, to newTitle: String) {
         ChatStore.rename(id: id, to: newTitle)
         if id == chatID { customTitle = newTitle.isEmpty ? nil : newTitle }
+        historyVersion += 1
+    }
+
+    func anheften(chatID id: String, _ an: Bool) {
+        ChatStore.anheften(id: id, an)
+        if id == chatID { angeheftet = an }
         historyVersion += 1
     }
 
@@ -750,7 +802,7 @@ final class AgentSession {
             case let .error(m): return ["k": "error", "text": m]
             }
         }
-        ChatStore.save(id: chatID, ["title": title, "customTitle": customTitle ?? "", "updated": Date().timeIntervalSince1970, "mode": mode.rawValue,
+        ChatStore.save(id: chatID, ["title": title, "customTitle": customTitle ?? "", "angeheftet": angeheftet, "updated": Date().timeIntervalSince1970, "mode": mode.rawValue,
                                     "project": project?.id.uuidString ?? "",
                                     "items": encoded, "history": history])
         historyVersion += 1
@@ -760,6 +812,7 @@ final class AgentSession {
         guard !isRunning, let json = ChatStore.load(id: id) else { return }
         chatID = id
         customTitle = (json["customTitle"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        angeheftet = json["angeheftet"] as? Bool ?? false
         apply(project: projects.project(id: (json["project"] as? String).flatMap(UUID.init(uuidString:))))
         history = json["history"] as? [[String: Any]] ?? []
         items = (json["items"] as? [[String: Any]] ?? []).compactMap { d in
@@ -785,6 +838,10 @@ final class AgentSession {
             default: return nil
             }
         }
+        lastPromptTokens = items.reversed().lazy.compactMap { item -> Int? in
+            if case let .assistant(_, _, stats?) = item.kind, stats.promptTokens > 0 { return stats.promptTokens }
+            return nil
+        }.first ?? 0
         // Vorschau-Tabs aus den geschriebenen Dateien wiederherstellen (ohne das Panel aufzuklappen).
         preview.clear()
         for item in items {

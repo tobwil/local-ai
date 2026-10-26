@@ -26,7 +26,7 @@ enum AgentHandoff {
               let task = HeadlessAgent.value(args, "--agent") else { return nil }
         let pid = gui.processIdentifier
 
-        var payload: [String: Any] = ["task": task, "yolo": args.contains("--yolo")]
+        var payload: [String: Any] = ["task": task, "yolo": args.contains("--yolo"), "weiter": args.contains("--weiter")]
         if let m = HeadlessAgent.value(args, "--mode") { payload["mode"] = m }
         let attach = HeadlessAgent.files(args, "--attach")
         if !attach.isEmpty { payload["attach"] = attach }
@@ -93,20 +93,21 @@ enum AgentHandoff {
             guard let id = n.object as? String, let u = n.userInfo, let task = u["task"] as? String else { return }
             let workspace = u["workspace"] as? String
             let yolo = u["yolo"] as? Bool ?? false
+            let weiter = u["weiter"] as? Bool ?? false
             let mode = (u["mode"] as? String).flatMap(WorkMode.init(rawValue:))
             let maxTokens = u["maxTokens"] as? Int
             let steps = u["steps"] as? Int
             let attach = (u["attach"] as? [String] ?? []).map { URL(fileURLWithPath: $0) }
             MainActor.assumeIsolated {
                 accept(id: id, task: task, mode: mode, workspace: workspace, yolo: yolo, maxTokens: maxTokens, steps: steps,
-                       attach: attach, app: app)
+                       attach: attach, weiter: weiter, app: app)
             }
         }
     }
 
     @MainActor
     private static func accept(id: String, task: String, mode: WorkMode?, workspace: String?, yolo: Bool,
-                               maxTokens: Int?, steps: Int?, attach: [URL], app: AppState) {
+                               maxTokens: Int?, steps: Int?, attach: [URL], weiter: Bool, app: AppState) {
         func post(_ kind: String, _ text: String = "", code: Int32 = 0) {
             DistributedNotificationCenter.default().postNotificationName(
                 event, object: id, userInfo: ["kind": kind, "text": text, "code": Int(code)], deliverImmediately: true)
@@ -119,11 +120,13 @@ enum AgentHandoff {
         post("accepted")
         app.requestedScreen = .agent
         // Mit Ordner: ins Projekt dieses Ordners (wird bei Bedarf angelegt), sonst im aktuellen Projekt.
+        // --weiter: im offenen Gespräch weitermachen (gleiches Projekt) – statt für jeden Auftrag ein neues Gespräch
         if let workspace {
             let url = URL(fileURLWithPath: workspace)
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            session.switchProject(session.projects.project(forFolder: url))
-        } else {
+            let ziel = session.projects.project(forFolder: url)
+            if !(weiter && ziel.id == session.project?.id) { session.switchProject(ziel) }
+        } else if !weiter {
             session.switchProject(session.project)
         }
         session.modeOverride = mode
