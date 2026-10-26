@@ -2,9 +2,13 @@
 
 **KI für alle – direkt auf deinem Mac.** Ein Tool von [KIsruptiv](https://kisruptiv.de).
 
-KI/lokal holt nahezu Frontier-Modelle auf Macs mit Apple Silicon – privat, offline, ohne Abo und schnell genug
+KI/lokal holt starke offene Modelle auf Macs mit Apple Silicon – privat, offline, ohne Abo und schnell genug
 für den Alltag (≥ 40 tok/s). Gebaut für Macs mit wenig Speicher (ab 24 GB): Die App erkennt die Hardware, empfiehlt das passende Modell, richtet die Engine ein und bringt einen
 Agenten mit Werkzeugen, Skills, Plugins, MCP, Browser-Steuerung, Sprache und Vision mit.
+
+⚖️ **[Ehrliche Einordnung](docs/EINORDNUNG.md)** – Vor- und Nachteile, reale Anwendungsszenarien und der Vergleich mit
+ChatGPT, Claude, Gemini und Microsoft Copilot. Kurz: für einen großen Teil der Alltagsarbeit eine echte Alternative,
+für die schwersten Aufgaben nicht – am besten hybrid.
 
 Das Logo „KI/sruptiv“ ist eine Marke von KIsruptiv. Engine: [oMLX](https://github.com/jundot/omlx) (Apache 2.0).
 
@@ -69,7 +73,7 @@ tools/serve.sh
 
 📖 **[Anleitung mit Screenshots](docs/ANLEITUNG.md)** – jeder Bereich der App erklärt.
 
-![KI/lokal](docs/bilder/agent-code-vorschau.png)
+![KI/lokal – Agent mit Projekt-Leiste](docs/bilder/agent-projekt.png)
 
 SwiftUI-App für macOS 15+ im KIsruptiv-Design (Dunkelblau `#274060`, Hellblau `#7590BF`, Gold `#FCC419`),
 die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
