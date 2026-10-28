@@ -11,6 +11,7 @@ struct AppSidebar: View {
     @State private var newTitle = ""
     @State private var skillFrom: ChatStore.Entry?
     @State private var editing: Project?
+    @FocusState private var searchFocused: Bool
     /// Projekte (bzw. „Gespräche“ als nil), deren Gespräche vollständig statt nur die neuesten angezeigt werden.
     @State private var allShown: Set<UUID?> = []
     /// Aufgeklappte Projektordner (gemerkt).
@@ -72,10 +73,17 @@ struct AppSidebar: View {
             .buttonStyle(.plain)
             .disabled(app.session.isRunning)
             .keyboardShortcut("n", modifiers: .command)
-            .help("Neues Gespräch (⌘N)")
+            .help("Neues Gespräch (⌘N oder ⇧⌘O)")
+            .background {
+                // Weitere Tastenkürzel wie bei ChatGPT: ⇧⌘O neues Gespräch, ⌘K Suche
+                Button("") { newChat(in: nil) }.keyboardShortcut("o", modifiers: [.command, .shift]).opacity(0)
+                Button("") { searchFocused = true }.keyboardShortcut("k", modifiers: .command).opacity(0)
+            }
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Gespräche durchsuchen", text: $query).textFieldStyle(.plain)
+                TextField("Suchen  ⌘K", text: $query).textFieldStyle(.plain)
+                    .focused($searchFocused)
+                    .onExitCommand { query = ""; searchFocused = false }
                 if searching {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -93,7 +101,8 @@ struct AppSidebar: View {
         let store = app.session.projects
         let pinned = chats.filter(\.angeheftet)
         let inProject = Dictionary(grouping: chats.filter { !$0.angeheftet && store.project(id: $0.projectID) != nil }) { $0.projectID! }
-        let loose = chats.filter { !$0.angeheftet && store.project(id: $0.projectID) == nil }
+        let automated = chats.filter { !$0.angeheftet && $0.automation != nil && store.project(id: $0.projectID) == nil }
+        let loose = chats.filter { !$0.angeheftet && $0.automation == nil && store.project(id: $0.projectID) == nil }
         // Projekte mit dem jüngsten Gespräch zuerst (angeheftete zählen mit)
         let latest = Dictionary(chats.compactMap { e in e.projectID.map { ($0, e.date) } }, uniquingKeysWith: max)
         let projects = store.projects.sorted { (latest[$0.id] ?? $0.lastUsed) > (latest[$1.id] ?? $1.lastUsed) }
@@ -112,6 +121,7 @@ struct AppSidebar: View {
             .disabled(app.session.isRunning)
             .help("Ein Projekt bündelt Gespräche, einen Ordner und eigene Anweisungen.")
         }
+        if !automated.isEmpty { automationFolder(automated) }
         Section("Gespräche") {
             if loose.isEmpty { Text("Noch keine.").font(.callout).foregroundStyle(.tertiary) }
             let all = allShown.contains(nil)
@@ -152,6 +162,40 @@ struct AppSidebar: View {
             if entries.count > Self.preview { moreButton(p.id, total: entries.count, all: all, indent: true) }
         }
     }
+
+    /// Ergebnisse der Automationen als Gespräche – aufklappbar wie ein Projektordner.
+    @ViewBuilder private func automationFolder(_ entries: [ChatStore.Entry]) -> some View {
+        let isOpen = open.contains("automationen")
+        let unread = entries.filter { $0.date > lastSeenAutomation }.count
+        Section {
+            HStack(spacing: 6) {
+                Image(systemName: "clock.badge.checkmark").foregroundStyle(Theme.primary).frame(width: 18)
+                Text("Automationen").lineLimit(1)
+                if unread > 0 {
+                    Text("\(unread) neu").font(.caption2.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 1).background(Theme.primary, in: Capsule())
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(isOpen ? 90 : 0))
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.snappy(duration: 0.2)) { openRaw = (isOpen ? open.subtracting(["automationen"]) : open.union(["automationen"])).sorted().joined(separator: ",") }
+                lastSeenAutomationRaw = Date().timeIntervalSince1970
+            }
+            .help("Jedes Ergebnis einer Automation als Gespräch – zum Nachfragen.")
+            if isOpen {
+                let all = allShown.contains(Self.automationKey)
+                ForEach(all ? entries : Array(entries.prefix(Self.preview))) { row($0, indent: true) }
+                if entries.count > Self.preview { moreButton(Self.automationKey, total: entries.count, all: all, indent: true) }
+            }
+        }
+    }
+
+    private static let automationKey = UUID(uuidString: "00000000-0000-0000-0000-00000000A070")
+    @AppStorage("automationenGesehen") private var lastSeenAutomationRaw = 0.0
+    private var lastSeenAutomation: Date { Date(timeIntervalSince1970: lastSeenAutomationRaw) }
 
     private func moreButton(_ id: UUID?, total: Int, all: Bool, indent: Bool) -> some View {
         Button(all ? "Weniger anzeigen" : "Alle \(total) anzeigen") {
@@ -243,6 +287,7 @@ struct SidebarMenu: View {
             ForEach(Self.screens) { s in
                 Button { screen = s } label: { Label(s.title, systemImage: s.icon) }
             }
+            Button { app.showSetup = true } label: { Label("Einrichtung & Berechtigungen …", systemImage: "checklist") }
             Divider()
             Button { screen = .compare } label: { Label(Screen.compare.title, systemImage: Screen.compare.icon) }
             Button { screen = .log } label: { Label(Screen.log.title, systemImage: Screen.log.icon) }

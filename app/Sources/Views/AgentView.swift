@@ -10,6 +10,7 @@ struct AgentView: View {
 
     var body: some View {
         chatAndPreview
+            .dropDestination(for: URL.self) { urls, _ in app.session.attach(urls) }
         .sheet(isPresented: $skillSheet) {
             SkillFromChatSheet(chatID: app.session.chatID, chatTitle: app.session.title, moreChats: app.session.repeatedChats)
         }
@@ -62,13 +63,29 @@ struct AgentView: View {
         }
     }
 
-    private var chat: some View {
+    @ViewBuilder private var chat: some View {
+        if app.session.items.isEmpty {
+            // Leeres Gespräch wie bei ChatGPT: Frage, Eingabefeld und Vorschläge in der Mitte
+            ScrollView {
+                VStack(spacing: 0) {
+                    InterruptedBanner().frame(maxWidth: 760).padding(.top, 16)
+                    EmptyAgent()
+                }
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
+                .containerRelativeFrame(.vertical, alignment: .center) { h, _ in h }
+            }
+        } else {
+            conversation
+        }
+    }
+
+    private var conversation: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
                         InterruptedBanner()
-                        if app.session.items.isEmpty { EmptyAgent() }
                         // Arbeitsschritte je Auftrag kompakt zusammengefasst, die Antwort groß darunter
                         ForEach(ChatSegment.build(app.session.items)) { segment in
                             switch segment {
@@ -143,73 +160,83 @@ private struct InterruptedBanner: View {
 private struct EmptyAgent: View {
     @Environment(AppState.self) private var app
 
-    /// „Guten Morgen, Tobias.“ – Vorname aus dem macOS-Benutzerkonto.
-    private var greeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        let part = hour < 5 ? "Gute Nacht" : hour < 11 ? "Guten Morgen" : hour < 17 ? "Hallo" : hour < 22 ? "Guten Abend" : "Gute Nacht"
+    /// „Wobei kann ich helfen, Tobias?“ – Vorname aus dem macOS-Benutzerkonto.
+    private var question: String {
+        if let p = app.session.project { return "Woran arbeiten wir in „\(p.name)“?" }
         let first = NSFullUserName().split(separator: " ").first.map(String.init) ?? ""
-        return first.isEmpty ? "\(part)." : "\(part), \(first)."
+        return first.isEmpty ? "Wobei kann ich helfen?" : "Wobei kann ich helfen, \(first)?"
     }
 
     var body: some View {
         let mode = app.session.mode
-        let project = app.session.project
-        let ideas = mode.ideas
         let quick = ["transkribieren", "zusammenfassen", "mail-antwort", "recherche", "excel-auswerten"]
             .compactMap { id in app.assistants.all.first { $0.id == id } }
-        VStack(alignment: .leading, spacing: 22) {
-            VStack(alignment: .leading, spacing: 6) {
-                Wordmark(suffix: project.map { $0.name.lowercased() } ?? "agent", size: 22)
-                Text(project == nil ? greeting : "Projekt „\(project!.name)“")
-                    .font(.system(size: 34, weight: .semibold, design: .rounded))
-                Text(project == nil ? "Was steht an? Fragen, recherchieren, Dateien, Kalender, Browser und Code – alles auf diesem Mac."
-                                    : mode == .code ? "Code-Projekt: \(mode.tagline)." : "Gespräche, Ordner und Anweisungen dieses Projekts an einem Ort.")
-                    .font(.title3).foregroundStyle(.secondary)
+        VStack(spacing: 18) {
+            Spacer(minLength: 24)
+            Text(question)
+                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                .multilineTextAlignment(.center)
+            if let p = app.session.project {
+                Text(mode == .code ? "Code-Projekt: \(mode.tagline)." : "Gespräche, Ordner und Anweisungen von „\(p.name)“ an einem Ort.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                ForEach(ideas, id: \.text) { icon, text in
-                    Button { app.session.input = text } label: {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: icon).foregroundStyle(Theme.primary).frame(width: 18)
-                            Text(text).multilineTextAlignment(.leading).foregroundStyle(.primary)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(14)
-                        .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
-                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.separator.opacity(0.6)))
+            Composer(centered: true)
+            // Vorschläge: Assistenten als Chips, darunter Beispiel-Aufträge
+            FlowLayout(spacing: 8) {
+                ForEach(quick) { a in
+                    Button { AssistantRunner.start(a, app: app) } label: {
+                        Label(a.name, systemImage: a.icon).lineLimit(1).fixedSize()
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .overlay(Capsule().strokeBorder(.separator))
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .help(a.summary)
                 }
+                Button { app.requestedScreen = .assistants } label: {
+                    Label("Mehr", systemImage: "ellipsis").padding(.horizontal, 12).padding(.vertical, 7)
+                        .overlay(Capsule().strokeBorder(.separator)).contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Alle Assistenten")
             }
-            if !quick.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Assistenten").font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
-                    FlowLayout(spacing: 8) {
-                        ForEach(quick) { a in
-                            Button { AssistantRunner.start(a, app: app) } label: {
-                                Label(a.name, systemImage: a.icon).lineLimit(1).fixedSize()
-                                    .padding(.horizontal, 12).padding(.vertical, 7)
-                                    .background(Theme.gold.opacity(0.14), in: Capsule())
-                                    .overlay(Capsule().strokeBorder(Theme.gold.opacity(0.35)))
-                            }
-                            .buttonStyle(.plain)
-                            .help(a.summary)
-                        }
-                        Button("Alle …") { app.requestedScreen = .assistants }.buttonStyle(.borderless)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(mode.ideas.prefix(4), id: \.text) { icon, text in
+                    Button { app.session.input = text } label: {
+                        Label(text, systemImage: icon).lineLimit(1).foregroundStyle(.secondary)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .help("In das Eingabefeld übernehmen")
                 }
             }
+            .frame(maxWidth: 760)
+            Spacer(minLength: 24)
         }
-        .padding(.top, 36)
+        .frame(maxWidth: 760)
     }
 }
 
 private struct ItemView: View {
     @Environment(AppState.self) private var app
     let item: AgentSession.Item
-    /// Tempo und Tokens erst beim Überfahren der Antwort zeigen.
+    /// Aktionen und Tempo erst beim Überfahren der Antwort zeigen.
     @State private var hovering = false
+    @State private var copied = false
+    @State private var editing = false
+    @State private var draft = ""
+
+    /// Letzte Antwort mit Text im Gespräch (nur dort gibt es „Neu generieren“).
+    private var isLastAnswer: Bool {
+        app.session.items.last { if case let .assistant(t, _, _) = $0.kind { return !t.isEmpty }; return false }?.id == item.id
+    }
+
+    /// Letzte eigene Nachricht (nur die lässt sich bearbeiten).
+    private var isLastUser: Bool {
+        app.session.items.last { if case .user = $0.kind { return true }; return false }?.id == item.id
+    }
 
     var body: some View {
         switch item.kind {
@@ -227,9 +254,37 @@ private struct ItemView: View {
                             }
                         }
                     }
-                    if !text.isEmpty { NutzerText(text: text) }
+                    if editing {
+                        VStack(alignment: .trailing, spacing: 8) {
+                            TextEditor(text: $draft).font(.body).frame(minHeight: 60, maxHeight: 220)
+                                .scrollContentBackground(.hidden)
+                                .padding(8).background(.background, in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.brand, lineWidth: 1.5))
+                            HStack {
+                                Button("Abbrechen") { editing = false }.keyboardShortcut(.cancelAction)
+                                Button("Senden") { editing = false; app.editLast(draft) }
+                                    .buttonStyle(.borderedProminent).keyboardShortcut(.return, modifiers: .command)
+                                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            }
+                            Text("Die Antworten danach werden verworfen und neu erzeugt. ⌘↩ zum Senden.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: 640)
+                    } else if !text.isEmpty {
+                        HStack(alignment: .center, spacing: 8) {
+                            if isLastUser && app.session.canRewind {
+                                Button { draft = app.session.lastUserText; editing = true } label: { Image(systemName: "pencil") }
+                                    .buttonStyle(.borderless).foregroundStyle(.secondary)
+                                    .help("Nachricht bearbeiten und neu beantworten lassen")
+                                    .opacity(hovering ? 1 : 0)
+                            }
+                            NutzerText(text: text)
+                        }
+                    }
                 }
             }
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
         case let .assistant(text, thinking, stats):
             VStack(alignment: .leading, spacing: 8) {
                 if !thinking.isEmpty {
@@ -245,16 +300,30 @@ private struct ItemView: View {
                 if !text.isEmpty {
                     RichText(text: text)
                 }
-                if let stats, hovering {
-                    HStack(spacing: 10) {
-                        Label("\(stats.tokPerSec.oneDecimal) tok/s", systemImage: "bolt.fill")
-                        Text("\(stats.tokens) Tokens")
-                        Text("erstes Token nach \(String(format: "%.1f", stats.ttft)) s")
-                        if !stats.model.isEmpty { Text(CloudModels.displayName(stats.model)) }
+                if !text.isEmpty && !(app.session.isRunning && item.id == app.session.items.last?.id) {
+                    // Wie bei ChatGPT: Kopieren, Vorlesen, Neu generieren – beim Überfahren (die letzte Antwort immer)
+                    let last = isLastAnswer
+                    HStack(spacing: 12) {
+                        Button { AppState.copy(text); copied = true } label: {
+                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        }
+                        .help(copied ? "Kopiert" : "Antwort kopieren")
+                        Button { app.voice.isSpeaking ? app.voice.stopSpeaking() : app.voice.speak(text) } label: {
+                            Image(systemName: app.voice.isSpeaking ? "stop.circle" : "speaker.wave.2")
+                        }
+                        .help(app.voice.isSpeaking ? "Vorlesen stoppen" : "Vorlesen")
+                        if last && app.session.canRewind {
+                            Button { app.regenerate() } label: { Image(systemName: "arrow.clockwise") }
+                                .help("Neu generieren – die Antwort verwerfen und noch einmal antworten lassen")
+                        }
+                        if let stats {
+                            Text("\(stats.tokPerSec.oneDecimal) tok/s · \(stats.tokens) Tokens · erstes Token nach \(String(format: "%.1f", stats.ttft)) s\(stats.model.isEmpty ? "" : " · " + CloudModels.displayName(stats.model))")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
                     }
-                    .font(.caption2).foregroundStyle(.tertiary)
-                } else if stats != nil {
-                    Color.clear.frame(height: 12)
+                    .buttonStyle(.borderless).foregroundStyle(.secondary).font(.callout)
+                    .opacity(hovering || last ? 1 : 0)
+                    .task(id: copied) { if copied { try? await Task.sleep(for: .seconds(2)); copied = false } }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -434,8 +503,11 @@ private struct ToolCard: View {
 
 private struct Composer: View {
     @Environment(AppState.self) private var app
+    /// Mittig im leeren Gespräch (ohne Leiste am unteren Rand).
+    var centered = false
     @FocusState private var focused: Bool
     @State private var captureError: String?
+    @State private var pasteMonitor: Any?
 
     var body: some View {
         @Bindable var session = app.session
@@ -524,9 +596,25 @@ private struct Composer: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator))
             }
 
+            if let queued = app.queuedMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock").foregroundStyle(Theme.gold)
+                    Text("Wird gesendet, sobald der Agent fertig ist: „\(queued)“").font(.callout).lineLimit(2)
+                    Spacer()
+                    Button { session.input = queued; app.queuedMessage = nil } label: { Image(systemName: "pencil") }
+                        .buttonStyle(.borderless).help("Zurück ins Eingabefeld")
+                    Button { app.queuedMessage = nil } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.borderless).help("Nicht senden")
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Theme.gold.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+            }
+
             // Eingabe wie bei Claude/ChatGPT: Textfeld über die volle Breite, darunter Schalter und Knöpfe.
             VStack(alignment: .leading, spacing: 8) {
-                TextField(app.canSendOrStart ? "Frag etwas oder beschreibe eine Aufgabe …" : "Erst die Engine einrichten (Übersicht)",
+                TextField(!app.canSendOrStart ? "Erst die Engine einrichten (Übersicht)"
+                          : session.isRunning ? "Schreib schon weiter – wird gesendet, wenn der Agent fertig ist …"
+                          : "Frag etwas oder beschreibe eine Aufgabe …",
                           text: $session.input, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
@@ -544,9 +632,15 @@ private struct Composer: View {
                     .buttonStyle(.plain).foregroundStyle(app.voice.isListening ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                     .help("Diktieren – wird auf dem Mac erkannt")
                     if session.isRunning {
+                        if canSend {
+                            Button { app.send() } label: { Image(systemName: "clock.arrow.circlepath").font(.system(size: 22)) }
+                                .buttonStyle(.plain).foregroundStyle(Theme.gold)
+                                .help("Vormerken – wird gesendet, sobald der Agent fertig ist (↩)")
+                        }
                         Button { session.stop() } label: { Image(systemName: "stop.circle.fill").font(.system(size: 30)) }
                             .buttonStyle(.plain).foregroundStyle(.red)
-                            .help("Agent stoppen")
+                            .keyboardShortcut(.cancelAction)
+                            .help("Agent stoppen (Esc) – die angefangene Antwort bleibt stehen")
                     } else if !canSend && !app.talkMode {
                         // Leeres Feld: Sprechen statt Senden (wie der Sprachmodus bei ChatGPT)
                         Button { app.toggleTalkMode() } label: {
@@ -576,10 +670,18 @@ private struct Composer: View {
             .contentShape(Rectangle())
             .onTapGesture { focused = true }
         }
-        .padding(16)
-        .background(.bar)
-        .onAppear { focused = true }
-        .dropDestination(for: URL.self) { urls, _ in attach(urls) }
+        .padding(centered ? 0 : 16)
+        .background(centered ? AnyShapeStyle(.clear) : AnyShapeStyle(.bar))
+        .onAppear {
+            focused = true
+            pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [app] event in
+                // ⌘V im Eingabefeld: Dateien und Bilder aus der Zwischenablage anhängen (Text fügt das Feld selbst ein).
+                guard focused, event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                      event.charactersIgnoringModifiers == "v" else { return event }
+                return app.session.paste(from: .general) ? nil : event
+            }
+        }
+        .onDisappear { if let m = pasteMonitor { NSEvent.removeMonitor(m); pasteMonitor = nil } }
     }
 
     private var suggestions: [SlashCommand] {
@@ -604,21 +706,9 @@ private struct Composer: View {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.message = "Bilder, PDF, Word, Excel, PowerPoint, Text, ZIP – oder jede andere Datei"
-        if panel.runModal() == .OK { attach(panel.urls) }
+        if panel.runModal() == .OK { app.session.attach(panel.urls) }
     }
 
-    /// Bilder gehen als Bild an das (Vision-)Modell, alles andere als Datei mit ausgelesenem Inhalt.
-    @discardableResult private func attach(_ urls: [URL]) -> Bool {
-        for url in urls {
-            if let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image),
-               let jpeg = ImageAttachment.jpeg(from: url) {
-                app.session.attachments.append(jpeg)
-            } else if !app.session.documents.contains(url) {
-                app.session.documents.append(url)
-            }
-        }
-        return !urls.isEmpty
-    }
 
     private var canSend: Bool {
         let session = app.session
@@ -960,6 +1050,34 @@ struct CodeBlock: View {
 
 
 
+
+extension AgentSession {
+    /// Bilder gehen als Bild an das (Vision-)Modell, alles andere als Datei mit ausgelesenem Inhalt.
+    @discardableResult func attach(_ urls: [URL]) -> Bool {
+        for url in urls {
+            if let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image),
+               let jpeg = ImageAttachment.jpeg(from: url) {
+                attachments.append(jpeg)
+            } else if !documents.contains(url) {
+                documents.append(url)
+            }
+        }
+        return !urls.isEmpty
+    }
+
+    /// Dateien (im Finder kopiert) oder ein Bild (z. B. Bildschirmfoto in die Zwischenablage) anhängen.
+    /// false = nichts davon da, das Textfeld fügt dann wie gewohnt Text ein.
+    func paste(from pb: NSPasteboard) -> Bool {
+        if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+            return attach(urls)
+        }
+        if pb.string(forType: .string) == nil, let image = NSImage(pasteboard: pb), let jpeg = ImageAttachment.jpeg(image) {
+            attachments.append(jpeg)
+            return true
+        }
+        return false
+    }
+}
 
 enum ImageAttachment {
     /// Bild laden, auf höchstens 1536 px verkleinern und als JPEG kodieren (spart Tokens).

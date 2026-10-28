@@ -16,6 +16,8 @@ final class AutomationCenter: NSObject {
     /// Führt den Auftrag aus und liefert den Text (vom AppState gesetzt).
     var runner: ((Automation) async throws -> String)?
     var speak: ((String) -> Void)?
+    /// Ein Ergebnis wurde als Gespräch gespeichert (Seitenleiste neu einlesen).
+    var onChatSaved: (() -> Void)?
 
     override init() {
         super.init()
@@ -112,6 +114,10 @@ final class AutomationCenter: NSObject {
     }
 
     private func deliver(_ run: AutomationRun, outputs: Set<Automation.Output>) {
+        // Jedes Ergebnis auch als Gespräch (Seitenleiste „Automationen“) – zum Nachfragen.
+        let prompt = automations.first { $0.id == run.automationID }.map { $0.prompt.isEmpty ? "Überwachung: \($0.watchCommand)" : $0.prompt } ?? run.name
+        ChatStore.saveAutomation(name: run.name, prompt: prompt, result: run.result, failed: run.failed, date: run.finished ?? run.started)
+        onChatSaved?()
         if outputs.contains(.notify) { notify(title: run.name, body: run.result) }
         if outputs.contains(.speak), !run.failed { speak?(run.result) }
         if outputs.contains(.file) {
