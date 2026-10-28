@@ -1,63 +1,52 @@
 import SwiftUI
 
-/// Gesprächsliste links vom Chat (wie bei Claude/ChatGPT): oben „Neues Gespräch“ und Suche, darunter angeheftete Gespräche,
-/// die Projekte als aufklappbare Ordner mit ihren Gesprächen und zuletzt die Gespräche ohne Projekt.
-/// Rechtsklick: Anheften, Umbenennen, als Skill/Assistent speichern, Papierkorb.
-struct ChatList: View {
+/// Die eine Seitenleiste der App (wie bei ChatGPT): oben „Neues Gespräch“ und Suche, darunter Assistenten, Wissen und
+/// Automationen, dann angeheftete Gespräche, Projekte als aufklappbare Ordner und alle übrigen Gespräche.
+/// Modelle, Einstellungen und Werkzeuge liegen im Menü ganz unten.
+struct AppSidebar: View {
     @Environment(AppState.self) private var app
+    @Binding var screen: Screen
     @State private var query = ""
     @State private var renaming: ChatStore.Entry?
     @State private var newTitle = ""
     @State private var skillFrom: ChatStore.Entry?
     @State private var editing: Project?
-    @State private var hoverProject: UUID?
-    /// Projekte (bzw. „Ohne Projekt“ als nil), deren Gespräche vollständig statt nur die neuesten angezeigt werden.
+    /// Projekte (bzw. „Gespräche“ als nil), deren Gespräche vollständig statt nur die neuesten angezeigt werden.
     @State private var allShown: Set<UUID?> = []
     /// Aufgeklappte Projektordner (gemerkt).
     @AppStorage("offeneProjekte") private var openRaw = ""
 
+    static let navigation: [Screen] = [.assistants, .knowledge, .automations]
     private static let preview = 5
-    private static let previewLoose = 15
-    private static let de = Locale(identifier: "de_DE")
+    private static let previewLoose = 20
 
     var body: some View {
         let session = app.session
         let _ = session.historyVersion
         let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
         let chats = searching ? ChatStore.search(query) : ChatStore.list()
-        VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                Button { session.newChat() } label: {
-                    Label("Neues Gespräch", systemImage: "square.and.pencil").frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.bordered).controlSize(.large)
-                .disabled(session.isRunning)
-                .help(session.project.map { "Neues Gespräch im Projekt „\($0.name)“" } ?? "Neues Gespräch ohne Projekt")
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Suchen", text: $query).textFieldStyle(.plain)
-                    if searching {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.plain).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal, 8).padding(.vertical, 6)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+        List(selection: Binding(get: { Self.navigation.contains(screen) ? screen : nil }, set: { if let s = $0 { screen = s } })) {
+            Section {
+                ForEach(Self.navigation) { s in Label(s.title, systemImage: s.icon).tag(s) }
             }
-            .padding(10)
-
-            List {
-                if searching {
+            if searching {
+                Section("Suchergebnisse") {
                     if chats.isEmpty { Text("Nichts gefunden.").foregroundStyle(.secondary).font(.callout) }
                     ForEach(chats) { row($0, showProject: true) }
-                } else {
-                    overview(chats)
                 }
+            } else {
+                overview(chats)
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
         }
-        .background(.background.secondary)
+        .listStyle(.sidebar)
+        .safeAreaInset(edge: .top, spacing: 0) { header(searching).background(.bar) }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider()
+                SidebarMenu(screen: $screen)
+            }
+            .background(.bar)
+        }
         .onAppear { if let id = session.project?.id { setOpen(id, true) } }
         .onChange(of: session.project?.id) { _, id in if let id { setOpen(id, true) } }
         .task(id: app.server.state.isUp) { if app.server.state.isUp { ChatTitles.backfill(app) } }
@@ -70,7 +59,35 @@ struct ChatList: View {
         .sheet(item: $editing) { ProjectEditor(project: $0) }
     }
 
-    // MARK: Übersicht: Angeheftet · Projekte · Ohne Projekt
+    private func header(_ searching: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Wordmark(size: 22).padding(.horizontal, 6)
+            Button { newChat(in: nil) } label: {
+                Label("Neues Gespräch", systemImage: "square.and.pencil")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8).padding(.vertical, 7)
+                    .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(app.session.isRunning)
+            .keyboardShortcut("n", modifiers: .command)
+            .help("Neues Gespräch (⌘N)")
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Gespräche durchsuchen", text: $query).textFieldStyle(.plain)
+                if searching {
+                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .padding(.horizontal, 12).padding(.top, 4).padding(.bottom, 6)
+    }
+
+    // MARK: Angeheftet · Projekte · Gespräche
 
     @ViewBuilder private func overview(_ chats: [ChatStore.Entry]) -> some View {
         let store = app.session.projects
@@ -89,58 +106,47 @@ struct ChatList: View {
         Section("Projekte") {
             ForEach(projects) { p in projectFolder(p, inProject[p.id] ?? []) }
             Button { editing = Project(name: "Neues Projekt") } label: {
-                Label("Neues Projekt …", systemImage: "folder.badge.plus").foregroundStyle(.secondary)
+                Label("Neues Projekt", systemImage: "folder.badge.plus").foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .disabled(app.session.isRunning)
+            .help("Ein Projekt bündelt Gespräche, einen Ordner und eigene Anweisungen.")
         }
-        Section {
+        Section("Gespräche") {
             if loose.isEmpty { Text("Noch keine.").font(.callout).foregroundStyle(.tertiary) }
             let all = allShown.contains(nil)
             ForEach(all ? loose : Array(loose.prefix(Self.previewLoose))) { row($0) }
             if loose.count > Self.previewLoose { moreButton(nil, total: loose.count, all: all, indent: false) }
-        } header: {
-            HStack {
-                Text("Ohne Projekt")
-                Spacer()
-                Button { app.session.switchProject(nil) } label: { Image(systemName: "plus") }
-                    .buttonStyle(.borderless).disabled(app.session.isRunning)
-                    .help("Neues Gespräch ohne Projekt")
-            }
         }
     }
 
-    /// Projektordner: Klick klappt auf/zu, „+“ beginnt ein Gespräch darin, Rechtsklick für Bearbeiten und Finder.
+    /// Projektordner: Klick klappt auf/zu; aufgeklappt steht „Neues Gespräch“ oben, Rechtsklick für Bearbeiten und Finder.
     @ViewBuilder private func projectFolder(_ p: Project, _ entries: [ChatStore.Entry]) -> some View {
         let session = app.session
-        let current = session.project?.id == p.id
+        let current = session.project?.id == p.id && screen == .agent
         let isOpen = open.contains(p.id.uuidString)
         HStack(spacing: 6) {
-            Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
-                .rotationEffect(.degrees(isOpen ? 90 : 0)).frame(width: 10)
-            Image(systemName: isOpen ? "folder.fill" : "folder").foregroundStyle(Theme.gold)
+            Image(systemName: isOpen ? "folder.fill" : "folder").foregroundStyle(Theme.gold).frame(width: 18)
             Text(p.name).lineLimit(1).fontWeight(current ? .semibold : .regular)
             Spacer(minLength: 4)
-            if hoverProject == p.id && !session.isRunning {
-                Button { session.switchProject(p); setOpen(p.id, true) } label: { Image(systemName: "plus") }
-                    .buttonStyle(.borderless).help("Neues Gespräch in „\(p.name)“")
-            } else {
-                Text("\(entries.count)").font(.caption).foregroundStyle(.tertiary).monospacedDigit()
-            }
+            Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(isOpen ? 90 : 0))
         }
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.snappy(duration: 0.2)) { setOpen(p.id, !isOpen) } }
-        .onHover { hoverProject = $0 ? p.id : (hoverProject == p.id ? nil : hoverProject) }
         .help(p.folder.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? p.name)
         .contextMenu {
-            Button("Neues Gespräch in „\(p.name)“") { session.switchProject(p); setOpen(p.id, true) }.disabled(session.isRunning)
+            Button("Neues Gespräch in „\(p.name)“") { newChat(in: p) }.disabled(session.isRunning)
             Button("Projekt bearbeiten …") { editing = p }
             if let url = p.folderURL { Button("Ordner im Finder öffnen") { NSWorkspace.shared.open(url) } }
         }
         if isOpen {
-            if entries.isEmpty {
-                Text("Noch keine Gespräche").font(.callout).foregroundStyle(.tertiary).padding(.leading, 34)
+            Button { newChat(in: p) } label: {
+                Label("Neues Gespräch", systemImage: "plus").font(.callout).foregroundStyle(.secondary)
+                    .padding(.leading, 24).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .disabled(session.isRunning)
             let all = allShown.contains(p.id)
             ForEach(all ? entries : Array(entries.prefix(Self.preview))) { row($0, indent: true) }
             if entries.count > Self.preview { moreButton(p.id, total: entries.count, all: all, indent: true) }
@@ -152,25 +158,32 @@ struct ChatList: View {
             if all { allShown.remove(id) } else { allShown.insert(id) }
         }
         .buttonStyle(.borderless).font(.caption)
-        .padding(.leading, indent ? 34 : 0)
+        .padding(.leading, indent ? 24 : 0)
+    }
+
+    private func newChat(in p: Project?) {
+        guard !app.session.isRunning else { return }
+        app.session.switchProject(p)
+        app.session.newChat()
+        if let p { setOpen(p.id, true) }
+        screen = .agent
     }
 
     // MARK: Zeile
 
     private func row(_ e: ChatStore.Entry, indent: Bool = false, showProject: Bool = false) -> some View {
         let session = app.session
-        let active = e.id == session.chatID
+        let active = e.id == session.chatID && screen == .agent
         let project = showProject ? session.projects.project(id: e.projectID) : nil
         return Button {
-            if !session.isRunning { session.load(id: e.id) }
+            if !session.isRunning || e.id == session.chatID { session.load(id: e.id); screen = .agent }
         } label: {
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                HStack(spacing: 5) {
                     if e.angeheftet { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Theme.gold) }
                     if e.laeuft { Image(systemName: "arrow.clockwise.circle.fill").font(.caption).foregroundStyle(Theme.gold) }
+                    if e.id == session.chatID && session.isRunning { ProgressView().controlSize(.mini) }
                     Text(e.title).lineLimit(1).fontWeight(active ? .semibold : .regular)
-                    Spacer(minLength: 4)
-                    Text(Self.shortDate(e.date)).font(.caption).foregroundStyle(.tertiary).monospacedDigit().fixedSize()
                 }
                 if let snippet = e.snippet {
                     Text(snippet).font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -179,7 +192,7 @@ struct ChatList: View {
                     Label(project.name, systemImage: "folder").font(.caption2).foregroundStyle(.tertiary)
                 }
             }
-            .padding(.leading, indent ? 34 : 0)
+            .padding(.leading, indent ? 24 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -193,18 +206,9 @@ struct ChatList: View {
             Divider()
             Button("In den Papierkorb", role: .destructive) { session.deleteChat(id: e.id) }
         }
-        .help(e.title)
-    }
-
-    /// Heute die Uhrzeit, gestern „Gestern“, in dieser Woche der Wochentag, sonst das Datum.
-    static func shortDate(_ d: Date) -> String {
-        let cal = Calendar.current
-        if cal.isDateInToday(d) { return d.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(de)) }
-        if cal.isDateInYesterday(d) { return "Gestern" }
-        if let days = cal.dateComponents([.day], from: d, to: .now).day, days < 6 {
-            return d.formatted(Date.FormatStyle().weekday(.abbreviated).locale(de))
-        }
-        return d.formatted(Date.FormatStyle().day(.twoDigits).month(.twoDigits).locale(de))
+        .help(session.isRunning && e.id != session.chatID
+              ? "Der Agent arbeitet gerade – erst stoppen oder warten, dann wechseln."
+              : "\(e.title) – \(e.date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(Locale(identifier: "de_DE"))))")
     }
 
     private var open: Set<String> { Set(openRaw.split(separator: ",").map(String.init)) }
@@ -223,6 +227,95 @@ struct ChatList: View {
         app.assistants.add(Assistant(id: UUID().uuidString, name: String(e.title.prefix(40)), icon: "star", summary: String(prompt.prefix(120)),
                                      category: "Eigene", prompt: prompt))
         app.notice = "Als Assistent gespeichert – zu finden unter „Assistenten“."
+    }
+}
+
+/// Menü ganz unten in der Seitenleiste (wie das Profil-Menü bei ChatGPT): Zustand der Engine und das aktive Modell,
+/// darin Übersicht, Modelle, Skills, Werkzeuge, Verbinden und Einstellungen.
+struct SidebarMenu: View {
+    @Environment(AppState.self) private var app
+    @Binding var screen: Screen
+
+    static let screens: [Screen] = [.overview, .models, .extensions, .tools, .connect, .settings]
+
+    var body: some View {
+        Menu {
+            ForEach(Self.screens) { s in
+                Button { screen = s } label: { Label(s.title, systemImage: s.icon) }
+            }
+            Divider()
+            Button { screen = .compare } label: { Label(Screen.compare.title, systemImage: Screen.compare.icon) }
+            Button { screen = .log } label: { Label(Screen.log.title, systemImage: Screen.log.icon) }
+            Divider()
+            switch app.server.state {
+            case .running, .starting:
+                Button { app.server.stop() } label: { Label("Engine stoppen", systemImage: "power") }
+            case .external:
+                EmptyView()
+            default:
+                Button { app.server.start() } label: { Label("Engine starten", systemImage: "power") }
+                    .disabled(!app.server.engineInstalled)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                StatusDot(state: app.server.state)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(app.selectedModelName).font(.callout.weight(.medium)).lineLimit(1)
+                    Text(app.server.state.label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "gearshape").foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(Self.screens.contains(screen) || screen == .compare || screen == .log
+                        ? AnyShapeStyle(Theme.primary.opacity(0.15)) : AnyShapeStyle(.clear),
+                        in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+        .help("Übersicht, Modelle, Skills, Werkzeuge, Verbinden und Einstellungen")
+        .padding(8)
+    }
+}
+
+/// Modellwahl oben in der Mitte (wie bei ChatGPT): lokale Modelle, Cloud-Modelle, „Modelle verwalten“.
+struct ModelPicker: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        Menu {
+            Section("Auf diesem Mac – privat") {
+                ForEach(app.installedModels, id: \.id) { m in
+                    Button { app.selectedModelID = m.id } label: {
+                        Label(m.name + (m.vision ? " · versteht Bilder" : ""),
+                              systemImage: app.selectedModelID == m.id ? "checkmark" : "desktopcomputer")
+                    }
+                }
+            }
+            if !CloudModels.all.isEmpty {
+                Section("Cloud – Daten verlassen den Mac") {
+                    ForEach(CloudModels.all, id: \.self) { id in
+                        Button { app.selectedModelID = id } label: {
+                            Label(CloudModels.displayName(id), systemImage: app.selectedModelID == id ? "checkmark" : "cloud")
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button("Modelle verwalten …") { app.requestedScreen = .models }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: app.selectedIsCloud ? "cloud" : "desktopcomputer")
+                    .foregroundStyle(app.selectedIsCloud ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                Text(app.selectedModelName).fontWeight(.semibold).lineLimit(1)
+                Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .disabled(app.session.isRunning)
+        .help(app.selectedIsCloud ? "Cloud-Modell: Gespräche gehen an den Anbieter." : "Modell wählen – lokale Modelle bleiben auf diesem Mac.")
     }
 }
 

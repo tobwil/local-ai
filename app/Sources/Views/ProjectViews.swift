@@ -1,54 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Projektauswahl mittig in der Titelleiste: „Ohne Projekt“ oder ein Projekt (Code-Projekte mit Kennzeichen).
-struct ProjectPicker: View {
-    @Environment(AppState.self) private var app
-    @State private var editing: Project?
-
-    var body: some View {
-        let session = app.session
-        Menu {
-            Button { session.switchProject(nil) } label: {
-                Label("Ohne Projekt", systemImage: session.project == nil ? "checkmark" : "tray")
-            }
-            if !session.projects.projects.isEmpty {
-                Section("Projekte") {
-                    ForEach(session.projects.sorted) { p in
-                        Button { session.switchProject(p) } label: {
-                            Label(p.name, systemImage: p.id == session.project?.id ? "checkmark" : "folder")
-                        }
-                    }
-                }
-            }
-            Divider()
-            Button("Neues Projekt …") { editing = Project(name: "Neues Projekt") }
-            if let p = session.project {
-                Button("„\(p.name)“ bearbeiten …") { editing = p }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: session.project == nil ? "tray" : "folder.fill")
-                    .foregroundStyle(session.project == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.gold))
-                Text(session.project?.name ?? "Ohne Projekt").fontWeight(.semibold)
-                if session.mode == .code {
-                    Text("Code")
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(Theme.primary.opacity(0.18), in: Capsule())
-                }
-                Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .contentShape(Rectangle())
-        }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-        .disabled(session.isRunning)
-        .help("Projekt wählen: Ein Projekt bündelt Gespräche, einen Ordner und eigene Anweisungen.")
-        .sheet(item: $editing) { ProjectEditor(project: $0) }
-    }
-}
-
 struct ProjectEditor: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss

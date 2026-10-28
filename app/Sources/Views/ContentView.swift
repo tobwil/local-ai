@@ -16,13 +16,6 @@ enum Screen: String, CaseIterable, Identifiable {
         self = screen
     }
 
-    /// Seitenleiste: Arbeiten · Einrichten · Mehr
-    static let sections: [(title: String, screens: [Screen])] = [
-        ("Arbeiten", [.overview, .agent, .assistants, .knowledge, .automations]),
-        ("Einrichten", [.models, .extensions, .tools, .connect, .settings]),
-        ("Mehr", [.compare, .log]),
-    ]
-
     var title: String {
         switch self {
         case .overview: return "Übersicht"
@@ -60,26 +53,13 @@ enum Screen: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @Environment(AppState.self) private var app
-    @State private var screen: Screen = .overview
+    /// Start im Agenten wie bei ChatGPT – ohne eingerichtete Engine in der Übersicht (Einrichtung).
+    @State private var screen: Screen = .agent
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $screen) {
-                ForEach(Screen.sections, id: \.title) { section in
-                    Section(section.title) {
-                        ForEach(section.screens) { s in Label(s.title, systemImage: s.icon).tag(s) }
-                    }
-                }
-            }
-            .safeAreaInset(edge: .top) {
-                HStack {
-                    Wordmark(size: 22)
-                    Spacer()
-                }
-                .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 4)
-            }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 210)
-            .safeAreaInset(edge: .bottom) { SidebarStatus() }
+            AppSidebar(screen: $screen)
+                .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 380)
         } detail: {
             Group {
                 switch screen {
@@ -97,7 +77,9 @@ struct ContentView: View {
                 case .log: LogView()
                 }
             }
-            .navigationTitle(screen.title)
+            .navigationTitle(screen == .agent ? (app.session.items.isEmpty ? "Neues Gespräch" : app.session.title) : screen.title)
+            .navigationSubtitle(screen == .agent ? app.session.project?.name ?? "" : "")
+            .onAppear { if !app.server.engineInstalled && !app.selectedIsCloud { screen = .overview } }
             .onChange(of: app.requestedScreen) { _, wanted in
                 if let wanted { screen = wanted; app.requestedScreen = nil }
             }
@@ -115,24 +97,8 @@ struct ContentView: View {
                         }
                 }
             }
-            .toolbar { ToolbarItem(placement: .primaryAction) { ServerToggle() } }
+            .toolbar { if screen == .overview || screen == .models { ToolbarItem(placement: .primaryAction) { ServerToggle() } } }
         }
-    }
-}
-
-struct SidebarStatus: View {
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        HStack(spacing: 8) {
-            StatusDot(state: app.server.state)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(app.server.state.label).font(.caption.weight(.semibold)).lineLimit(1)
-                Text(app.selectedModelName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer()
-        }
-        .padding(12)
     }
 }
 
