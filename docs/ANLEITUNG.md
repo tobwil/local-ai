@@ -11,12 +11,12 @@ Wofür es sich eignet, wo die Grenzen liegen und wie es sich von den Bezahl-Dien
 1. [Installation und erster Start](#1-installation-und-erster-start)
 2. [Übersicht: Hardware, Nutzung, Temperatur](#2-übersicht)
 3. [Agent: chatten, arbeiten, programmieren](#3-agent)
-4. [Projekte und Gesprächsliste](#4-projekte-und-gesprächsliste)
+4. [Seitenleiste: Gespräche, Projekte, Automationen](#4-seitenleiste)
 5. [Vorschau und Canvas](#5-vorschau-und-canvas)
 6. [Dateien anhängen und Dokumente erzeugen](#6-dateien-anhängen-und-dokumente-erzeugen)
 7. [Assistenten (fertige Funktionen) und Transkription](#7-assistenten)
 8. [Skills: Abläufe wiederverwenden](#8-skills)
-9. [Freigaben, YOLO und Notbremse](#9-freigaben-yolo-und-notbremse)
+9. [Freigaben, „Ohne Nachfragen“ und Notbremse](#9-freigaben-und-notbremse)
 10. [Wissen, Automationen, Modelle, Vergleich](#10-weitere-bereiche)
 11. [iPhone, Heimnetz und andere Programme](#11-iphone-heimnetz-und-andere-programme)
 12. [Terminal und Links](#12-terminal-und-links)
@@ -27,13 +27,18 @@ Wofür es sich eignet, wo die Grenzen liegen und wie es sich von den Bezahl-Dien
 
 ## 1. Installation und erster Start
 
-1. **DMG öffnen** (`KI-lokal-0.6.1.dmg` aus den [Releases](https://github.com/tobwil/local-ai/releases)) und *KI/lokal* in den Programme-Ordner ziehen – oder selbst bauen:
-   `app/Scripts/build.sh --run` (braucht Xcode und `brew install xcodegen`).
-2. **Engine einrichten:** Beim ersten Start schlägt die Übersicht „Engine einrichten“ vor. KI/lokal installiert
-   [oMLX](https://github.com/jundot/omlx) nach `~/.kilokal` – einmalig, ein paar Minuten.
-3. **Modell laden:** Unter *Modelle* das empfohlene Modell laden (auf 24 GB: **Ornith 1.5 35B · 3 Bit**, 16,6 GB).
-4. **Loslegen:** Im *Agent* einfach schreiben. Läuft die Engine noch nicht, startet KI/lokal sie beim Abschicken selbst
+1. **DMG öffnen** (`KI-lokal-0.7.0.dmg` aus den [Releases](https://github.com/tobwil/local-ai/releases)) und *KI/lokal* in den
+   Programme-Ordner ziehen. Die App ist signiert und von Apple notarisiert – sie startet ohne Sicherheitswarnung.
+   Oder selbst bauen: `app/Scripts/build.sh --install` (braucht Xcode und `brew install xcodegen`).
+2. **Einrichtung in drei Schritten:** Beim ersten Start führt KI/lokal durch **Engine** (installiert
+   [oMLX](https://github.com/jundot/omlx) nach `~/.kilokal`, ein paar Minuten), **Modell** (auf 24 GB:
+   **Ornith 1.5 35B · 3 Bit**, 16,6 GB, mit Fortschritt) und **Berechtigungen** (Bildschirm, Kalender, Erinnerungen,
+   Mikrofon, Spracherkennung, Mitteilungen – jeweils mit Status, *Erlauben* oder *In Einstellungen öffnen*). Später
+   erreichbar über das Menü unten links → *Einrichtung & Berechtigungen*.
+3. **Loslegen:** einfach schreiben. Läuft die Engine noch nicht, startet KI/lokal sie beim Abschicken selbst
    (beim ersten Mal lädt das Modell ~20–30 s, danach antwortet es nach 1–4 s).
+
+![Einrichtung](bilder/einrichtung.png)
 
 > **Tipp:** Mit wenig freiem Arbeitsspeicher hilft „GPU-Speicher erhöhen“ in den Einstellungen (fragt nach deinem Passwort,
 > gilt bis zum Neustart).
@@ -58,31 +63,47 @@ KI/lokal zeigt das mit einem Hinweis an.
 ## 3. Agent
 
 Ein Eingabefeld für alles: Fragen beantworten, im Web recherchieren, Dateien bearbeiten, Termine anlegen, den Browser
-steuern, programmieren. Der Agent wählt seine Werkzeuge selbst.
+steuern, programmieren. Der Agent wählt seine Werkzeuge selbst. Die Bedienung ist bewusst wie bei ChatGPT.
 
 ![Start](bilder/agent-start.png)
 
-Der Start zeigt Vorschläge und die wichtigsten [Assistenten](#7-assistenten) als Knöpfe. Antworten erscheinen mit
-Überschriften, Listen und Tabellen; darunter Tempo (tok/s), Tokens und die Zeit bis zum ersten Wort.
+Ein neues Gespräch fragt *„Wobei kann ich helfen?“* – das Eingabefeld steht in der Mitte, darunter die wichtigsten
+[Assistenten](#7-assistenten) und Beispiel-Aufträge zum Übernehmen. **Oben in der Mitte** wählst du das Modell: lokal
+(privat, auf diesem Mac) oder Cloud (Daten verlassen den Mac); *Modelle verwalten …* führt zum Katalog.
 
 ![Agent](bilder/agent-allgemein.png)
+
+**Antworten** erscheinen mit Überschriften, Listen und Tabellen. Darunter: **Kopieren**, **Vorlesen** und bei der
+letzten Antwort **Neu generieren**, dazu Tempo (tok/s) und Tokens. An deiner letzten Nachricht erscheint beim
+Überfahren ein **Stift**: Text ändern, ⌘↩ – alles danach wird neu beantwortet, Anhänge bleiben.
 
 **Arbeitsschritte:** Was der Agent unterwegs tut (Dateien lesen, Befehle, Websuche …), steht kompakt in einer Zeile –
 z. B. *„4 Arbeitsschritte · 1 Datei geändert · Prüfung bestanden“*. Ein Klick klappt die Schritte in Klartext auf
 („Gelesen: index.html“, „Im Web gesucht: …“), ein weiterer Klick auf einen Schritt zeigt Befehl und Ergebnis.
 
-**Unter dem Eingabefeld:**
+**Eingabefeld:**
 
 | Element | Funktion |
 |---|---|
-| Denken | Das Modell überlegt erst, dann antwortet es (gründlicher, langsamer) |
-| 📁 Ordner | Arbeitsordner des Gesprächs (ohne Projekt: `~/Dokumente/KI lokal`) |
-| 🔥 YOLO | Werkzeuge ohne Nachfrage ausführen (siehe [Freigaben](#9-freigaben-yolo-und-notbremse)) |
+| **＋** | Dateien hinzufügen, Bildschirmfoto (ganzer Bildschirm, Bereich, Fenster), **Gründlich nachdenken**, **Ohne Nachfragen arbeiten** (siehe [Freigaben](#9-freigaben-und-notbremse)), Arbeitsordner wählen, Antworten vorlesen |
+| Chips | Was eingeschaltet ist (z. B. *Nachdenken*, *Ohne Nachfragen*) steht als Chip daneben – Klick auf × schaltet es aus |
 | 🎙 Mikrofon | Diktieren (Spracherkennung auf dem Mac) |
-| 🔈 Lautsprecher | Antworten vorlesen an/aus |
-| 📷 Kamera | Bildschirmfoto anhängen (ganzer Bildschirm, Bereich, Fenster) |
-| 〰️ Wellen | **Gesprächsmodus:** sprechen – nach einer Pause wird abgeschickt – die Antwort wird vorgelesen – weiter sprechen |
-| 📎 Büroklammer | Dateien anhängen (auch per Drag & Drop) |
+| 〰️ Rund (leeres Feld) | **Sprechen:** reden – nach einer Pause wird abgeschickt – die Antwort wird vorgelesen – weiterreden |
+| ↑ Senden | Mit Text im Feld; während der Agent arbeitet: **Vormerken** (⏱) und **Stoppen** |
+
+- **Anhängen:** Dateien auf das Fenster ziehen, über ＋ wählen oder mit **⌘V** einfügen (Bildschirmfotos aus der
+  Zwischenablage, im Finder kopierte Dateien). PDF, Word, Excel, PowerPoint, ZIP, Audio und Bilder.
+- **Weiterschreiben, während der Agent arbeitet:** Die Nachricht wird vorgemerkt und geht raus, sobald er fertig ist
+  (vorher änderbar oder verwerfbar).
+- **Stoppen** (Esc): Die angefangene Antwort bleibt stehen; der Agent weiß beim nächsten Mal, dass du abgebrochen hast.
+
+| Tastenkürzel | |
+|---|---|
+| ⌘N oder ⇧⌘O | Neues Gespräch |
+| ⌘K | Gespräche durchsuchen |
+| ↩ / ⇧↩ | Senden / neue Zeile |
+| ⌘↩ | Bearbeitete Nachricht senden |
+| Esc | Agent stoppen |
 
 Während der Agent arbeitet, zeigt er an, was gerade passiert („liest Eingabe … 12 s“, „denkt nach“, Tempo in tok/s).
 
@@ -105,25 +126,34 @@ Der Agent darf 50 Schritte am Stück machen, in Code-Projekten 100; danach pausi
 dasselbe Werkzeug immer wieder gleich auf, weist ihn die App darauf hin. Lange Aufträge erscheinen im Chat eingeklappt. Nach gelungenen Abläufen mit mehreren Schritten schlägt
 KI/lokal vor, sie [als Skill zu speichern](#8-skills).
 
-## 4. Projekte und Gesprächsliste
+## 4. Seitenleiste
 
-**Projekte** bündeln Gespräche, einen Ordner und eigene Anweisungen – wie Projekte bei ChatGPT oder Claude. Oben in der
-Mitte wählst du *Ohne Projekt* oder ein Projekt; *Neues Projekt …* legt eins an (Name, Ordner, Anweisungen).
+Alles Wichtige steht in **einer Seitenleiste** – wie bei ChatGPT:
+
+- oben **Neues Gespräch** und **Suche** über alle Gespräche (Titel und Inhalt),
+- darunter **Assistenten**, **Wissen** und **Automationen**,
+- **Projekte** als aufklappbare Ordner mit ihren Gesprächen (aufgeklappt oben *＋ Neues Gespräch* im Projekt),
+- der Ordner **Automationen** mit jedem Ergebnis einer Automation als Gespräch (mit „neu“-Zähler) – dort direkt nachfragen,
+- alle übrigen **Gespräche**,
+- ganz unten das **Menü** mit Modell und Engine-Zustand: Übersicht, Modelle, Skills & Plugins, Werkzeuge & MCP,
+  Verbinden, Einstellungen, Einrichtung & Berechtigungen, Vergleich, Protokoll, Engine an/aus.
+
+Gespräche bekommen nach der ersten Antwort einen **kurzen Titel** vom Modell. Rechtsklick auf ein Gespräch:
+**Anheften** (bleibt oben), **Umbenennen**, **Als Skill speichern**, **Als Assistent speichern**, In den Papierkorb.
+
+**Projekte** bündeln Gespräche, einen Ordner und eigene Anweisungen – wie Projekte bei ChatGPT oder Claude.
+*Neues Projekt* legt eins an (Name, Ordner, Anweisungen); Rechtsklick auf einen Projektordner: bearbeiten, im Finder öffnen.
 
 - **Liegt im Ordner Code** (`.git`, `package.json`, `index.html` …), arbeitet der Agent automatisch wie ein Coding-Agent:
-  Code-Werkzeuge, prüft nach jeder Änderung, schnelles Dekodieren (MTP, ~80 tok/s) – erkennbar am Kennzeichen **Code**.
+  Code-Werkzeuge, prüft nach jeder Änderung, schnelles Dekodieren (MTP, ~80 tok/s).
 - Die Arbeitsweise lässt sich im Projekt auch fest einstellen (Automatisch · Nur Chat · Arbeiten · Code).
 
-**Projekt-Leiste** (rechts, Symbol ▯ oben rechts): **Umgebung** (Ordner – Klick öffnet den Finder, Rechtsklick „Im Terminal
-öffnen“ –, Git-Zweig, Modell), **Starten** (z. B. „Spiel starten“ oder „Seite öffnen“ für `index.html`, sonst die
-Anleitung), **Kontext** (wie voll das 32k-Arbeitsgedächtnis ist; ab ~24k kürzt die App ältere Schritte), **Ausgaben** des Gesprächs und die zuletzt geänderten
-**Projektdateien** – ein Klick öffnet sie in der Vorschau. So findest du Ergebnisse, egal welches Gespräch offen ist.
+**Projekt-Leiste** (rechts, Symbol ▯ oben rechts): **Projekt** bzw. **Arbeitsordner** (Klick öffnet den Finder,
+Rechtsklick „Im Terminal öffnen“), Git-Zweig, Modell, **Starten** (z. B. „Spiel starten“ oder „Seite öffnen“ für
+`index.html`, sonst die Anleitung), **Ausgaben** des Gesprächs, **Kontext** (wie voll das 32k-Arbeitsgedächtnis ist; ab
+~24k kürzt die App ältere Schritte) und die **zuletzt geänderten** Dateien – ein Klick öffnet sie in der Vorschau.
 
 ![Projekt-Leiste](bilder/agent-projekt.png)
-
-**Gesprächsliste** (Symbol links oben im Agent): alle Gespräche nach Datum, **Suche über alle Gespräche** (Titel und Inhalt),
-im Projekt nur dessen Gespräche (*Alle anzeigen* erweitert). Rechtsklick: **Anheften** (bleibt oben – z. B. das Haupt-Gespräch eines Projekts), **Umbenennen**, **Als Skill speichern**,
-**Als Assistent speichern**, In den Papierkorb. Die Spalte lässt sich breiter ziehen.
 
 ## 5. Vorschau und Canvas
 
@@ -144,7 +174,7 @@ gesetzt, Bilder, PDF, Word, Excel und Videos zeigt QuickLook, Code erscheint mit
 
 ## 6. Dateien anhängen und Dokumente erzeugen
 
-**Anhängen (📎 oder Drag & Drop):** KI/lokal liest den Inhalt lokal aus und gibt ihn dem Agenten mit.
+**Anhängen (＋, ⌘V oder Datei aufs Fenster ziehen):** KI/lokal liest den Inhalt lokal aus und gibt ihn dem Agenten mit.
 
 | Datei | Was passiert |
 |---|---|
@@ -181,7 +211,7 @@ Der Bereich **Assistenten** ist die Galerie fertiger Funktionen: ein Klick, Date
 | Code prüfen | Projektordner auf Fehler und Risiken prüfen |
 
 - **Als Automation** (Uhr-Symbol): Assistenten ohne Eingabe laufen nach Zeitplan, z. B. jeden Morgen.
-- **Eigene Assistenten:** In der Gesprächsliste per Rechtsklick *Als Assistent speichern* – die erste Nachricht des
+- **Eigene Assistenten:** In der Seitenleiste per Rechtsklick auf ein Gespräch *Als Assistent speichern* – die erste Nachricht des
   Gesprächs wird zum Auftrag.
 
 **Begriffe kurz:** Ein *Assistent* ist eine sichtbare Funktion für dich. Ein *Skill* ist das Wissen dahinter, das der Agent
@@ -191,8 +221,8 @@ selbst lädt. Eine *Automation* ist ein Assistent nach Zeitplan.
 
 Skills sind Anleitungen, die der Agent bei passenden Aufgaben selbst lädt (Format wie bei Claude Code: `SKILL.md`).
 
-- **Aus Gesprächen lernen:** Nach einem gelungenen Ablauf *„Diesen Ablauf als Skill speichern“* oder Rechtsklick in der
-  Gesprächsliste. Das Modell schreibt einen Entwurf (Wann verwenden, Schritte, Ergebnis prüfen, Stolperfallen), du prüfst
+- **Aus Gesprächen lernen:** Nach einem gelungenen Ablauf *„Diesen Ablauf als Skill speichern“* oder Rechtsklick auf das
+  Gespräch in der Seitenleiste. Das Modell schreibt einen Entwurf (Wann verwenden, Schritte, Ergebnis prüfen, Stolperfallen), du prüfst
   und speicherst. Beim nächsten Mal weiß der Agent, wie es geht – ein persönliches Kochbuch.
 - **Wiederholungen erkennen:** Erledigt der Agent zum dritten Mal einen ähnlichen Auftrag (ähnliche Wörter, ähnliche
   Werkzeuge), schlägt der Chat vor, daraus einen Skill zu machen – aus **allen** passenden Gesprächen zusammen, damit
@@ -206,23 +236,23 @@ Skills sind Anleitungen, die der Agent bei passenden Aufgaben selbst lädt (Form
 
 ![Skills & Plugins](bilder/skills.png)
 
-## 9. Freigaben, YOLO und Notbremse
+## 9. Freigaben und Notbremse
 
 Lesen, Suchen und Web-Abrufe laufen frei. **Schreiben, Terminal-Befehle, Browser-Aktionen, HTTP, MCP und Cloud** fragen
 vorher. Die Freigabe-Karte sagt in Klartext, **was** der Agent tun will (Befehl, Datei, Adresse), **welches Risiko** das hat
 und **warum** gefragt wird. Wahl: *Ablehnen*, *Erlauben* oder *Für dieses Gespräch alles erlauben*.
 
-- **YOLO** (🔥): keine Rückfragen – praktisch für längere Aufgaben.
-- **Notbremse** (an lassen!): fragt auch im YOLO-Modus bei `sudo`, `rm -rf`, Force-Push, Systembefehlen, Schreiben außerhalb
+- **Ohne Nachfragen arbeiten** (＋ im Eingabefeld, früher „YOLO“): keine Rückfragen – praktisch für längere Aufgaben.
+- **Notbremse** (an lassen!): fragt auch ohne Nachfragen bei `sudo`, `rm -rf`, Force-Push, Systembefehlen, Schreiben außerhalb
   deines Benutzerordners (auch per Terminal, z. B. in Homebrew-Ordnern) und Änderungen an systemweit installierten Paketen.
 - **Zugangsdaten:** Lesen von `~/.ssh`, `~/.aws`, `~/.gnupg`, dem Schlüsselbund & Co. fragt immer nach (auch bei sonst freien
   Werkzeugen wie `read_file`). API-Schlüssel, Tokens und private Schlüssel in Werkzeug-Ergebnissen blendet die App aus –
   sie landen weder im Verlauf des Modells noch im Protokoll.
-- **Sandbox** (Einstellungen → Agent): Shell-Befehle, die ohne deine Freigabe laufen (YOLO, Automationen, `--yolo` im
+- **Sandbox** (Einstellungen → Agent): Shell-Befehle, die ohne deine Freigabe laufen (*Ohne Nachfragen*, Automationen, `--yolo` im
   Terminal), laufen in der macOS-Sandbox. Schreiben geht dort nur im Arbeitsordner, in `/tmp` und in Cache-Ordnern;
   Zugangsdaten sind gesperrt, Shell-Startdateien (`.zshrc` …), LaunchAgents und `~/.kilokal` geschützt. Was du einzeln
   freigibst, läuft im Standard ohne Sandbox; wahlweise *Immer* oder *Aus*.
-- Jede Aktion steht im **Protokoll** (wer, was, freigegeben/YOLO/abgelehnt, Ergebnis).
+- Jede Aktion steht im **Protokoll** (wer, was, freigegeben/ohne Nachfragen/abgelehnt, Ergebnis).
 
 ### Lektionen: aus Fehlern lernen
 
@@ -250,7 +280,9 @@ und nennt die Quelle. Alles bleibt auf dem Mac.
 ![Wissen](bilder/wissen.png)
 
 **Automationen:** Aufträge nach Zeitplan (Uhrzeit und Wochentage oder Intervall), z. B. das **Morgen-Briefing** mit
-Terminen, Erinnerungen, Mails, Wetter und Nachrichten – als Mitteilung, vorgelesen oder als Datei.
+Terminen, Erinnerungen, Mails, Wetter und Nachrichten – als Mitteilung, vorgelesen oder als Datei. Jedes Ergebnis
+landet außerdem als Gespräch im Ordner **Automationen** der Seitenleiste. *Jetzt ausführen* startet sofort, ebenso der
+Link `kilokal://automationen?ausfuehren=Name` (z. B. aus Kurzbefehlen).
 
 **Überwachen ohne Modell:** Eine Automation kann zuerst einen Prüfbefehl ausführen (z. B. `curl` auf eine Webseite,
 `df` für den Speicherplatz). Der läuft im Takt ohne Modell – kostet kaum Strom und keinen Speicher. Nur wenn der
@@ -270,7 +302,8 @@ oder der Agent bekommt die Ausgabe (bei „geändert“ auch den vorherigen Stan
 ![Vergleich](bilder/vergleich.png)
 
 **Werkzeuge & MCP:** eingebaute Werkzeuge an/aus, MCP-Server verbinden (wie in Claude Desktop).
-**Protokoll:** Aktionen des Agenten, Engine- und MCP-Log.
+**Protokoll:** Aktionen des Agenten, Engine- und MCP-Log (gleiche Engine-Meldungen hintereinander stehen als eine Zeile
+mit Anzahl; gelbe WARNING-Zeilen sind Hinweise, keine Fehler).
 
 ## 11. iPhone, Heimnetz und andere Programme
 
@@ -322,6 +355,6 @@ Weitere Schalter: `--weiter` (im offenen Gespräch weitermachen statt ein neues 
 | iPhone erreicht den Mac nicht | Heimnetz-Freigabe an? Engine in der App (neu) starten, gleiches WLAN |
 | Absturz | Die Übersicht bietet beim nächsten Start „Melden“ an (vorausgefülltes GitHub-Issue) |
 | Agent stoppt mit „Schrittlimit erreicht“ | **Weitermachen** klicken – oder in den Einstellungen mehr Schritte bzw. öfter „von selbst weitermachen“ erlauben |
-| Shell-Befehl scheitert mit „Operation not permitted“ | Die Sandbox hat geschützt (YOLO/Automation). Befehl ohne YOLO einzeln freigeben oder Sandbox unter Einstellungen → Agent anpassen |
+| Shell-Befehl scheitert mit „Operation not permitted“ | Die Sandbox hat geschützt (ohne Nachfragen/Automation). Befehl einzeln freigeben oder Sandbox unter Einstellungen → Agent anpassen |
 
 ![Protokoll](bilder/protokoll.png)

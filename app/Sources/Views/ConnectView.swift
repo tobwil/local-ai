@@ -150,7 +150,7 @@ struct LogView: View {
             if source == 2 {
                 if actions.isEmpty {
                     ContentUnavailableView("Noch keine Aktionen", systemImage: "list.bullet.clipboard",
-                                           description: Text("Hier steht jeder Werkzeug-Aufruf des Agenten – mit Freigabe, YOLO oder aus Automationen."))
+                                           description: Text("Hier steht jeder Werkzeug-Aufruf des Agenten – mit Freigabe, ohne Nachfragen (YOLO) oder aus Automationen."))
                 }
                 List(actions) { e in
                     HStack(alignment: .top, spacing: 10) {

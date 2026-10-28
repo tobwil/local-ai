@@ -73,6 +73,8 @@ tools/serve.sh
 
 📖 **[Anleitung mit Screenshots](docs/ANLEITUNG.md)** – jeder Bereich der App erklärt.
 
+![KI/lokal – Start wie bei ChatGPT](docs/bilder/agent-start.png)
+
 ![KI/lokal – Agent mit Projekt-Leiste](docs/bilder/agent-projekt.png)
 
 SwiftUI-App für macOS 15+ im KIsruptiv-Design (Dunkelblau `#274060`, Hellblau `#7590BF`, Gold `#FCC419`),
@@ -80,18 +82,19 @@ die oMLX im Hintergrund steuert. Bundle-ID `de.kisruptiv.kilokal`.
 
 | Bereich | Was er kann |
 |---|---|
+| **Bedienung** | wie ChatGPT: **eine Seitenleiste** (Neues Gespräch, Suche ⌘K, Assistenten, Wissen, Automationen, Projekte als Ordner, Gespräche mit Kurztiteln vom Modell), Modellwahl oben, Eingabe mit **＋**-Menü, unter Antworten Kopieren · Vorlesen · Neu generieren, letzte Nachricht bearbeiten, Vormerken während der Agent arbeitet, ⌘V für Bilder und Dateien, verständliche Fehlermeldungen; **Einrichtung in drei Schritten** (Engine, Modell, Berechtigungen) |
 | **Übersicht** | erkennt Chip, RAM, GPU-Limit, Bandbreite und SSD, empfiehlt das passende Modell, zeigt erwartete tok/s; richtet die Engine per Klick ein; **Nutzung & Mac**: Tokens, Anfragen, Tempo, Cache-Treffer, Speicher und **Chip-Temperatur** live |
 | **Wissen** | eigene Ordner indexieren (Text, Markdown, PDF, Word, RTF, HTML, Code), Hybrid-Suche aus Stichwörtern und Bedeutung (Embeddings von macOS, auf dem Gerät), Quellenangabe |
-| **Automationen** | Aufträge nach Zeitplan (Uhrzeit + Wochentage oder Intervall), Vorlage **Morgen-Briefing**, Ergebnis als Mitteilung, vorgelesen oder Datei; **Überwachen ohne Modell**: Prüfbefehl im Takt, der Agent arbeitet nur, wenn sich etwas ändert, fehlschlägt oder gemeldet wird; Start bei Anmeldung |
-| **Agent** | ein Eingabefeld für alles; **Projekte** (Gespräche + Ordner + Anweisungen, Code-Projekte automatisch erkannt); **Gesprächsliste mit Volltextsuche**, Umbenennen; **Vorschau** (Seiten und Spiele live) und **formatierter Canvas**; Dateien anhängen (PDF, Word, Excel, PowerPoint, ZIP, Audio …); Dokumente erzeugen (PDF, Word, Excel); Arbeitsschritte kompakt in Klartext; **Gesprächsmodus**, Diktat, Vorlesen, Bildschirmfotos; Freigaben in Klartext oder YOLO |
+| **Automationen** | Aufträge nach Zeitplan (Uhrzeit + Wochentage oder Intervall), Vorlage **Morgen-Briefing**, Ergebnis als Mitteilung, vorgelesen oder Datei und **als Gespräch** zum Nachfragen; **Überwachen ohne Modell**: Prüfbefehl im Takt, der Agent arbeitet nur, wenn sich etwas ändert, fehlschlägt oder gemeldet wird; Start bei Anmeldung |
+| **Agent** | ein Eingabefeld für alles; **Projekte** (Gespräche + Ordner + Anweisungen, Code-Projekte automatisch erkannt); Volltextsuche, Anheften, Umbenennen; **Vorschau** (Seiten und Spiele live) und **formatierter Canvas**; Dateien anhängen (PDF, Word, Excel, PowerPoint, ZIP, Audio …); Dokumente erzeugen (PDF, Word, Excel); Arbeitsschritte kompakt in Klartext; **Gesprächsmodus**, Diktat, Vorlesen, Bildschirmfotos; Freigaben in Klartext oder *Ohne Nachfragen* |
 | **Assistenten** | Galerie fertiger Funktionen: **Transkribieren** (lokal), Meeting-Protokoll, Dokument zusammenfassen, Excel auswerten, Übersetzen, E-Mail beantworten, Recherche-Bericht …; eigene aus Gesprächen; als Automation nach Zeitplan |
 | **Modelle** | Katalog (Ornith, Qwen 3.6 Vision, Gemma 4, LFM2.5, Mellum), lokal gefundene Modelle, Cloud-Modelle; **Hugging-Face-Browser** mit Bewertung „läuft gut / langsam / knapp / zu groß“, tok/s-Schätzung und Prüfung, ob die installierte Engine die Architektur kennt |
 | **Vergleich** | lokale Modelle gegen GPT-6 Astra, GPT-6.1 Sol, GPT-5.5/5.6, Claude Opus 5/5.5, Fable 5.1, Mythos 5, Gemini 3.1 – SWE-bench Verified/Pro, Terminal-Bench, GPQA, HLE, ARC-AGI-2 (Stand 25.10.2026, mit Quellen) |
 | **Skills & Plugins** | Claude-Code-Format: Skills (`SKILL.md`), Plugins mit Befehlen, Sub-Agenten und MCP; Katalog aus Marketplaces (offizieller Anthropic-Katalog, eigene per Git), Installation per Klick |
 | **Werkzeuge & MCP** | MCP-Client für stdio- und HTTP-Server (Format wie Claude Desktop, Import, Vorlagen, `${VAR}`-Ersetzung) |
 | **Verbinden** | Claude Code / Claude Desktop / OpenAI-kompatible Clients; **KiroCrew** über OpenCode oder Pi (fertige Konfiguration); die App selbst als MCP-Server (`--mcp-server`) |
-| **Protokoll** | jede Werkzeug-Aktion des Agenten (Freigabe, YOLO, unbeaufsichtigt) in `~/.kilokal/logs/actions.jsonl`, dazu Engine- und MCP-Log |
-| **Einstellungen** | Heimnetz-Freigabe (iPhone per QR-Code), YOLO-Modus + Notbremse, Browser-Steuerung, Kalender/Erinnerungen/Kontakte/Mail, GPU-Speicher erhöhen, Engine einrichten, Websuche (DuckDuckGo, SearXNG, Brave), Modell-Router nach Thema, Cloud-Anbieter (Anthropic, OpenAI-kompatibel), Experte für `ask_expert`, eigene Anweisungen |
+| **Protokoll** | jede Werkzeug-Aktion des Agenten (Freigabe, ohne Nachfragen, unbeaufsichtigt) in `~/.kilokal/logs/actions.jsonl`, dazu Engine- und MCP-Log |
+| **Einstellungen** | Heimnetz-Freigabe (iPhone per QR-Code), *Ohne Nachfragen* + Notbremse, Browser-Steuerung, Kalender/Erinnerungen/Kontakte/Mail, GPU-Speicher erhöhen, Engine einrichten, Websuche (DuckDuckGo, SearXNG, Brave), Modell-Router nach Thema, Cloud-Anbieter (Anthropic, OpenAI-kompatibel), Experte für `ask_expert`, eigene Anweisungen |
 
 **Werkzeuge des Agenten:**
 
@@ -149,10 +152,10 @@ und gehen mit „An Agent schicken“ zurück an den Agenten. HTML-/SVG-/Markdow
 die laufende App – er erscheint live im Agent-Tab, Freigaben erteilst du dort, das Terminal zeigt den Verlauf mit. Läuft die App
 nicht (oder mit `--headless`), arbeitet der Agent ohne Oberfläche; die Notbremse lehnt gefährliche Aktionen dann automatisch ab.
 
-**Freigaben & YOLO:** Schreiben, Shell, Browser-Aktionen, HTTP, MCP und Cloud brauchen eine Freigabe im Chat. Der **YOLO-Modus** (🔥 im Chat)
+**Freigaben & „Ohne Nachfragen“:** Schreiben, Shell, Browser-Aktionen, HTTP, MCP und Cloud brauchen eine Freigabe im Chat. **Ohne Nachfragen arbeiten** (＋ im Eingabefeld, früher „YOLO“)
 führt alles ohne Nachfrage aus. Die abschaltbare **Notbremse** fragt trotzdem bei `sudo`, `rm -rf`, `git push --force`, `git reset --hard`,
 `curl … | sh`, Systembefehlen, beim Schreiben außerhalb des Benutzerordners und bei jedem Zugriff auf Zugangsdaten (`~/.ssh`,
-`~/.aws`, Schlüsselbund …). Shell-Befehle ohne Freigabe (YOLO, Automationen) laufen in einer **macOS-Sandbox**
+`~/.aws`, Schlüsselbund …). Shell-Befehle ohne Freigabe (*Ohne Nachfragen*, Automationen) laufen in einer **macOS-Sandbox**
 (`sandbox-exec`: Schreiben nur im Arbeitsordner, `/tmp` und Caches; Zugangsdaten gesperrt). API-Schlüssel und private
 Schlüssel in Werkzeug-Ergebnissen werden ausgeblendet, bevor sie in den Verlauf oder ins Protokoll gelangen.
 
@@ -163,9 +166,9 @@ Mitgelieferte Skills: `web-recherche`, `code-review`, `dokumente-zusammenfassen`
 **Cloud ist optional:** Ohne API-Schlüssel bleibt alles auf dem Mac. Claude läuft über die Messages-API (`anthropic-version 2026-10-21`,
 adaptives Thinking, Thinking-Blöcke werden unverändert zurückgegeben, serverseitige Fallbacks bei Ablehnungen eingeschaltet).
 
-**Gesprächsmodus** (Wellen-Symbol im Chat): sprechen – nach ~1,4 s Pause wird abgeschickt – die Antwort wird vorgelesen –
+**Sprechen** (runder Knopf bei leerem Eingabefeld): sprechen – nach ~1,4 s Pause wird abgeschickt – die Antwort wird vorgelesen –
 danach hört KI/lokal wieder zu. „Schau auf meinen Bildschirm“ hängt automatisch ein Bildschirmfoto an. Antworten sind im
-Gesprächsmodus kurz und vorlesbar. **Bildschirmfotos** (ganzer Bildschirm, Bereich, Fenster) gehen per Kamera-Symbol an das Vision-Modell.
+Gesprächsmodus kurz und vorlesbar. **Bildschirmfotos** (ganzer Bildschirm, Bereich, Fenster) kommen über ＋ → Bildschirmfoto oder ⌘V dazu und gehen an das Vision-Modell (auf 24 GB wechselt die App dafür kurz das Modell).
 
 **Sprache:** Diktat über die Spracherkennung von macOS (auf dem Gerät, wenn verfügbar), Vorlesen mit der besten
 installierten Systemstimme – ohne zusätzliches Modell im knappen Speicher.
