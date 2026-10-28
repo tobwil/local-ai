@@ -120,7 +120,7 @@ final class AppState {
         }
         if settings.pimEnabled { tools += PIMTools.all() }
         if knowledge.chunkCount > 0 { tools.append(knowledge.tool()) }
-        if settings.screenEnabled { tools.append(ScreenCapture.lookTool { [weak self] in self?.visionModelID }) }
+        if settings.screenEnabled { tools.append(ScreenCapture.lookTool(visionModel: { [weak self] in self?.visionModelID }, mainModel: { [weak self] in self?.selectedModelID ?? "" })) }
         if !plugins.skills.isEmpty { tools.append(skillTool) }
         if !plugins.agents.isEmpty { tools.append(subAgentTool) }
         if !settings.expertModel.isEmpty { tools.append(expertTool) }

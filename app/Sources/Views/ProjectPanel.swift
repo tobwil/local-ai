@@ -15,7 +15,7 @@ struct ProjectPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 // Umgebung
-                abschnitt("Umgebung") {
+                abschnitt(session.project == nil ? "Arbeitsordner" : "Projekt") {
                     zeile(icon: "folder", titel: ordner.lastPathComponent, detail: (ordner.path as NSString).abbreviatingWithTildeInPath) {
                         NSWorkspace.shared.open(ordner)
                     }
@@ -48,20 +48,17 @@ struct ProjectPanel: View {
                     }
                 }
 
-                // Kontext
-                abschnitt("Kontext") { kontext }
-
-                // Ausgaben dieses Gesprächs
-                abschnitt("Ausgaben in diesem Gespräch") {
-                    let outs = session.outputs
-                    if outs.isEmpty {
-                        Text("Noch keine – Dateien, die der Agent erstellt oder ändert, erscheinen hier.").font(.caption).foregroundStyle(.secondary)
+                // Ausgaben und Kontext erst, wenn das Gespräch begonnen hat
+                let outs = session.outputs
+                if !outs.isEmpty {
+                    abschnitt("Ausgaben in diesem Gespräch") {
+                        ForEach(outs.prefix(8), id: \.self) { url in dateiZeile(url, relativZu: ordner) }
                     }
-                    ForEach(outs.prefix(8), id: \.self) { url in dateiZeile(url, relativZu: ordner) }
                 }
+                if !session.items.isEmpty { abschnitt("Kontext") { kontext } }
 
-                // Projektdateien
-                abschnitt("Projektdateien") {
+                // Zuletzt geänderte Dateien im Ordner
+                abschnitt("Zuletzt geändert") {
                     ForEach(dateien, id: \.self) { url in dateiZeile(url, relativZu: ordner) }
                     if dateien.isEmpty { Text("Ordner ist leer.").font(.caption).foregroundStyle(.secondary) }
                     Button("Alle im Finder zeigen") { NSWorkspace.shared.open(ordner) }.buttonStyle(.borderless).font(.caption)

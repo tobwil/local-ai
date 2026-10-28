@@ -103,6 +103,8 @@ enum ChatStore {
         var mode: WorkMode = .work
         var projectID: UUID?
         var angeheftet = false
+        /// Eigener oder vom Modell vorgeschlagener Kurztitel vorhanden (sonst Anfang der ersten Nachricht).
+        var hasShortTitle = false
         /// Lief beim letzten Speichern noch ein Auftrag? (App beendet oder abgestürzt → Fortsetzen anbieten)
         var laeuft = false
         /// Kleingeschriebener Text (Titel, Nachrichten, Antworten) für die Suche.
@@ -133,7 +135,10 @@ enum ChatStore {
     }
 
     private static func makeEntry(id: String, _ json: [String: Any]) -> Entry {
-        let title = (json["customTitle"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? json["title"] as? String ?? "Gespräch"
+        let custom = (json["customTitle"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let auto = (json["autoTitle"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let first = (json["items"] as? [[String: Any]])?.first { $0["k"] as? String == "user" }?["text"] as? String
+        let title = custom ?? auto ?? first.map(ChatTitles.fallback) ?? json["title"] as? String ?? "Gespräch"
         var text = title
         for item in json["items"] as? [[String: Any]] ?? [] where ["user", "assistant"].contains(item["k"] as? String ?? "") {
             text += "\n" + (item["text"] as? String ?? "")
@@ -143,6 +148,7 @@ enum ChatStore {
                      mode: (json["mode"] as? String).flatMap(WorkMode.init(rawValue:)) ?? .work,
                      projectID: (json["project"] as? String).flatMap(UUID.init(uuidString:)),
                      angeheftet: json["angeheftet"] as? Bool ?? false,
+                     hasShortTitle: custom != nil || json["autoTitle"] != nil,
                      laeuft: json["laeuft"] as? Bool ?? false,
                      searchText: text.lowercased())
     }
@@ -185,6 +191,13 @@ enum ChatStore {
     static func markStopped(id: String) {
         guard var json = load(id: id) else { return }
         json["laeuft"] = false
+        save(id: id, json)
+    }
+
+    /// Titelvorschlag des Modells speichern (leer = Vorschlag misslungen, nicht erneut versuchen).
+    static func setAutoTitle(id: String, _ title: String) {
+        guard var json = load(id: id) else { return }
+        json["autoTitle"] = title
         save(id: id, json)
     }
 

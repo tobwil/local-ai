@@ -54,7 +54,7 @@ enum ScreenCapture {
 
     /// Werkzeug für den Agenten: Bildschirm ansehen und eine Frage dazu von einem Vision-Modell beantworten lassen.
     @MainActor
-    static func lookTool(visionModel: @escaping @MainActor () -> String?) -> AgentTool {
+    static func lookTool(visionModel: @escaping @MainActor () -> String?, mainModel: @escaping @MainActor () -> String) -> AgentTool {
         AgentTool(name: "look_at_screen",
                   description: "Macht ein Bildschirmfoto des Hauptbildschirms und lässt ein Vision-Modell eine Frage dazu beantworten (z. B. „Was steht in der Fehlermeldung?“).",
                   parameters: schema([("question", "string", "Was soll auf dem Bildschirm geprüft oder beschrieben werden?")],
@@ -69,9 +69,26 @@ enum ScreenCapture {
                 ["type": "text", "text": question + " Antworte präzise auf Deutsch."],
                 ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(jpeg.base64EncodedString())"]],
             ]]]
+            // Ein eigenes Vision-Modell passt auf kleinen Macs nicht neben das Hauptmodell: vorher das Hauptmodell,
+            // danach das Vision-Modell entladen – sonst kann die Engine das Hauptmodell nicht mehr laden (Fehler 507).
+            let main = await mainModel()
+            let separate = model != main
+            let small = ProcessInfo.processInfo.physicalMemory < 48 * 1_073_741_824
+            if separate && small { await LLMClient.unload(model: main) }
             var text = ""
-            for try await ev in LLMClient.stream(model: model, messages: messages, tools: [], thinking: false, maxTokens: 1200, mtp: false) {
-                if case let .content(c) = ev { text += c }
+            do {
+                for try await ev in LLMClient.stream(model: model, messages: messages, tools: [], thinking: false, maxTokens: 1200, mtp: false) {
+                    if case let .content(c) = ev { text += c }
+                }
+            } catch {
+                if separate { await LLMClient.unload(model: model) }
+                throw error
+            }
+            if separate { await LLMClient.unload(model: model) }
+            let seen = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if seen.hasPrefix("[Error") { throw ToolError.invalid("Vision-Modell: \(seen.prefix(300))") }
+            guard !seen.isEmpty else {
+                throw ToolError.invalid("Das Vision-Modell hat nichts erkannt. Nicht erneut versuchen – nutze andere Werkzeuge (browser_tabs, web_search).")
             }
             return "Bildschirm (gesehen von \(CloudModels.displayName(model))):\n\(text)"
         }

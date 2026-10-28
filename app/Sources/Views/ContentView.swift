@@ -16,6 +16,13 @@ enum Screen: String, CaseIterable, Identifiable {
         self = screen
     }
 
+    /// Seitenleiste: Arbeiten · Einrichten · Mehr
+    static let sections: [(title: String, screens: [Screen])] = [
+        ("Arbeiten", [.overview, .agent, .assistants, .knowledge, .automations]),
+        ("Einrichten", [.models, .extensions, .tools, .connect, .settings]),
+        ("Mehr", [.compare, .log]),
+    ]
+
     var title: String {
         switch self {
         case .overview: return "Übersicht"
@@ -57,8 +64,12 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(Screen.allCases, selection: $screen) { s in
-                Label(s.title, systemImage: s.icon).tag(s)
+            List(selection: $screen) {
+                ForEach(Screen.sections, id: \.title) { section in
+                    Section(section.title) {
+                        ForEach(section.screens) { s in Label(s.title, systemImage: s.icon).tag(s) }
+                    }
+                }
             }
             .safeAreaInset(edge: .top) {
                 HStack {
@@ -131,11 +142,13 @@ struct ServerToggle: View {
     var body: some View {
         switch app.server.state {
         case .running, .starting:
-            Button { app.server.stop() } label: { Label("Stoppen", systemImage: "stop.fill") }
+            Button { app.server.stop() } label: { Label("Engine stoppen", systemImage: "power") }
+                .help("Engine stoppen – gibt den Arbeitsspeicher des Modells frei")
         case .external:
             Label("Extern", systemImage: "bolt.horizontal.fill").foregroundStyle(.green)
         default:
-            Button { app.server.start() } label: { Label("Starten", systemImage: "play.fill") }
+            Button { app.server.start() } label: { Label("Engine starten", systemImage: "power") }
+                .help("Engine starten – lädt das Modell")
                 .disabled(!app.server.engineInstalled)
         }
     }

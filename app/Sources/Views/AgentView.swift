@@ -76,7 +76,7 @@ struct AgentView: View {
                             previewFraction = min(max(1 - v.location.x / geo.size.width, 0.25), 0.7)
                         })
                     PreviewPane().frame(width: previewWidth)
-                } else if projektLeiste {
+                } else if projektLeiste, app.session.project != nil || !app.session.items.isEmpty {
                     // Ohne offene Vorschau: Projekt-Leiste (Ordner, Starten, Kontext, Ausgaben, Dateien)
                     Rectangle().fill(.separator).frame(width: 1)
                     ProjectPanel().frame(width: min(320, max(260, geo.size.width * 0.3)))
@@ -224,8 +224,6 @@ private struct EmptyAgent: View {
                     }
                 }
             }
-            Text("\(app.modeTools.count) Werkzeuge · \(app.plugins.skills.count) Skills · \(app.selectedModelName) – läuft auf diesem Mac")
-                .font(.caption).foregroundStyle(.tertiary)
         }
         .padding(.top, 36)
     }
@@ -415,7 +413,6 @@ private struct Composer: View {
                 if app.selectedIsCloud {
                     Chip(text: "Cloud – Daten verlassen den Mac", systemImage: "cloud", tint: .orange)
                 }
-                Text(app.selectedModelName).font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
             }
 
             if app.talkMode { TalkBar() }
