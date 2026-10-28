@@ -96,7 +96,7 @@ struct SettingsView: View {
 
             Section("Bildschirm & Gesprächsmodus") {
                 Toggle("Agent darf auf den Bildschirm schauen (look_at_screen, „schau auf meinen Bildschirm“)", isOn: $settings.screenEnabled)
-                Text("Bildschirmfotos gehen an das Vision-Modell (\(app.visionModelID.map(CloudModels.displayName) ?? "keins installiert")) – lokal, außer du hast ein Cloud-Modell gewählt. Jede Aufnahme durch den Agenten braucht deine Freigabe, außer im YOLO-Modus. macOS fragt einmal nach der Erlaubnis für Bildschirmaufnahmen.")
+                Text("Bildschirmfotos gehen an das Vision-Modell (\(app.visionModelID.map(CloudModels.displayName) ?? "keins installiert")) – lokal, außer du hast ein Cloud-Modell gewählt. Jede Aufnahme durch den Agenten braucht deine Freigabe, außer bei „Ohne Nachfragen“. macOS fragt einmal nach der Erlaubnis für Bildschirmaufnahmen.")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("Gesprächsmodus (Wellen-Symbol im Chat): sprechen, nach ~1,4 s Pause wird abgeschickt, die Antwort wird vorgelesen, danach hört KI/lokal wieder zu.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -155,7 +155,7 @@ struct SettingsView: View {
             Section("Agent") {
                 Toggle("Datei- und Shell-Werkzeuge", isOn: $state.useBuiltinTools)
                 Toggle(isOn: Bindable(app.session).autoApprove) {
-                    Label("YOLO-Modus: ohne Nachfrage ausführen", systemImage: "flame.fill")
+                    Label("Ohne Nachfragen arbeiten (früher „YOLO“)", systemImage: "flame.fill")
                 }
                 Toggle("Notbremse: bei zerstörerischen Aktionen trotzdem fragen (sudo, rm -rf, force-push, Schreiben außerhalb ~)",
                        isOn: Bindable(app.session).dangerGuard)
