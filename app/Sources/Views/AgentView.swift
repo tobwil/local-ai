@@ -5,40 +5,16 @@ import UniformTypeIdentifiers
 struct AgentView: View {
     @Environment(AppState.self) private var app
     @AppStorage("previewFraction") private var previewFraction = 0.45
-    @AppStorage("chatListOpen") private var chatListOpen = true
     @AppStorage("projektLeiste") private var projektLeiste = true
-    @AppStorage("chatListWidth") private var chatListWidth = 260.0
-    @State private var dragStartWidth: Double?
     @State private var skillSheet = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            if chatListOpen {
-                ChatList().frame(width: chatListWidth)
-                // Breite per Ziehen ändern (wird gemerkt)
-                Rectangle().fill(.separator).frame(width: 1)
-                    .overlay { Color.clear.frame(width: 9).contentShape(Rectangle()).onHover { inside in
-                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-                    } }
-                    .gesture(DragGesture(minimumDistance: 1).onChanged { v in
-                        let start = dragStartWidth ?? chatListWidth
-                        dragStartWidth = start
-                        chatListWidth = min(max(start + v.translation.width, 200), 480)
-                    }.onEnded { _ in dragStartWidth = nil })
-            }
-            chatAndPreview
-        }
+        chatAndPreview
         .sheet(isPresented: $skillSheet) {
             SkillFromChatSheet(chatID: app.session.chatID, chatTitle: app.session.title, moreChats: app.session.repeatedChats)
         }
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button { withAnimation { chatListOpen.toggle() } } label: {
-                    Label("Gespräche", systemImage: "list.bullet.rectangle")
-                }
-                .help("Gesprächsliste mit Suche ein-/ausblenden")
-            }
-            ToolbarItem(placement: .principal) { ProjectPicker() }
+            ToolbarItem(placement: .principal) { ModelPicker() }
             ToolbarItem {
                 let preview = app.session.preview
                 Button { withAnimation { preview.isOpen.toggle() } } label: {
@@ -232,6 +208,8 @@ private struct EmptyAgent: View {
 private struct ItemView: View {
     @Environment(AppState.self) private var app
     let item: AgentSession.Item
+    /// Tempo und Tokens erst beim Überfahren der Antwort zeigen.
+    @State private var hovering = false
 
     var body: some View {
         switch item.kind {
@@ -267,7 +245,7 @@ private struct ItemView: View {
                 if !text.isEmpty {
                     RichText(text: text)
                 }
-                if let stats {
+                if let stats, hovering {
                     HStack(spacing: 10) {
                         Label("\(stats.tokPerSec.oneDecimal) tok/s", systemImage: "bolt.fill")
                         Text("\(stats.tokens) Tokens")
@@ -275,9 +253,13 @@ private struct ItemView: View {
                         if !stats.model.isEmpty { Text(CloudModels.displayName(stats.model)) }
                     }
                     .font(.caption2).foregroundStyle(.tertiary)
+                } else if stats != nil {
+                    Color.clear.frame(height: 12)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
         case let .tool(name, source, arguments, state, result):
             ToolCard(id: item.id, name: name, source: source, arguments: arguments, state: state, result: result)
         case let .error(message) where message.hasPrefix(AgentSession.stepLimitPrefix) || message.hasPrefix("Schrittlimit erreicht"):
@@ -296,11 +278,67 @@ private struct ItemView: View {
             Label(message, systemImage: "checkmark.seal")
                 .font(.callout).foregroundStyle(Theme.primary)
                 .padding(10).background(Theme.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        case let .error(message) where message.hasPrefix("Antwort am Längenlimit"):
+            Label(message, systemImage: "text.append").font(.callout).foregroundStyle(.secondary)
         case let .error(message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red).font(.callout)
-                .padding(10).background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            ErrorNote(message: message, isLast: item.id == app.session.items.last?.id)
         }
+    }
+}
+
+/// Fehler in verständlichen Worten, mit dem passenden Knopf; die Originalmeldung steht unter „Technische Details“.
+private struct ErrorNote: View {
+    @Environment(AppState.self) private var app
+    let message: String
+    let isLast: Bool
+
+    var body: some View {
+        let e = Self.explain(message)
+        VStack(alignment: .leading, spacing: 8) {
+            Label(e.title, systemImage: "exclamationmark.triangle.fill").font(.callout.weight(.semibold)).foregroundStyle(.orange)
+            if !e.hint.isEmpty { Text(e.hint).font(.callout) }
+            if isLast && !app.session.isRunning {
+                HStack(spacing: 8) {
+                    if e.engine {
+                        Button("Engine starten") { app.server.start() }.buttonStyle(.borderedProminent)
+                    }
+                    Button("Erneut versuchen") {
+                        app.session.input = "Bitte versuch es noch einmal."
+                        app.send()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            DisclosureGroup("Technische Details") {
+                Text(message).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    static func explain(_ m: String) -> (title: String, hint: String, engine: Bool) {
+        let l = m.lowercased()
+        if l.contains("507") || l.contains("memory") || l.contains("arbeitsspeicher") {
+            return ("Zu wenig Arbeitsspeicher",
+                    "Das Modell passt gerade nicht in den Speicher. Schließ große Programme (z. B. Videos im Browser) oder beginne ein neues Gespräch – lange Gespräche brauchen mehr Speicher.", false)
+        }
+        if l.contains("could not connect") || l.contains("connection refused") || l.contains("-1004") || l.contains("verbindung") {
+            return ("Die Engine läuft nicht", "Ohne Engine kann das lokale Modell nicht antworten.", true)
+        }
+        if l.contains("timed out") || l.contains("zeitüberschreitung") {
+            return ("Keine Antwort in der Zeit", "Das Modell hat zu lange gebraucht. Versuch es noch einmal oder teile die Aufgabe in kleinere Schritte.", false)
+        }
+        if l.contains("401") || l.contains("api key") || l.contains("api-key") || l.contains("unauthorized") {
+            return ("Zugang abgelehnt", "Der API-Schlüssel fehlt oder ist ungültig – unter Einstellungen prüfen.", false)
+        }
+        if l.contains("429") || l.contains("rate limit") || l.contains("overloaded") {
+            return ("Der Anbieter bremst gerade", "Zu viele Anfragen beim Cloud-Anbieter. In einer Minute erneut versuchen oder ein lokales Modell wählen.", false)
+        }
+        return ("Das hat nicht geklappt", "", false)
     }
 }
 
@@ -488,62 +526,46 @@ private struct Composer: View {
 
             // Eingabe wie bei Claude/ChatGPT: Textfeld über die volle Breite, darunter Schalter und Knöpfe.
             VStack(alignment: .leading, spacing: 8) {
-                TextField(app.canSendOrStart ? "Frag etwas oder gib dem Agenten eine Aufgabe …" : "Erst die Engine einrichten (Übersicht)",
+                TextField(app.canSendOrStart ? "Frag etwas oder beschreibe eine Aufgabe …" : "Erst die Engine einrichten (Übersicht)",
                           text: $session.input, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .focused($focused)
                     .onSubmit { app.send() }
                     .padding(.horizontal, 4).padding(.top, 4)
-                HStack(spacing: 10) {
-                    ViewThatFits(in: .horizontal) {
-                        toggles(compact: false)
-                        toggles(compact: true)
-                    }
-                    .controlSize(.small)
+                HStack(spacing: 8) {
+                    plusMenu
+                    activeChips
                     Spacer(minLength: 6)
                     Button { app.voice.toggleListening(currentText: session.input) } label: {
-                        Image(systemName: app.voice.isListening ? "mic.fill" : "mic").font(.system(size: 20))
+                        Image(systemName: app.voice.isListening ? "mic.fill" : "mic").font(.system(size: 18))
                             .symbolEffect(.pulse, isActive: app.voice.isListening)
                     }
                     .buttonStyle(.plain).foregroundStyle(app.voice.isListening ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                    .help("Diktieren (auf dem Mac erkannt)")
-                    Button {
-                        if app.voice.isSpeaking { app.voice.stopSpeaking() } else { app.settings.readAloud.toggle() }
-                    } label: {
-                        Image(systemName: app.voice.isSpeaking ? "speaker.wave.3.fill" : (app.settings.readAloud ? "speaker.wave.2" : "speaker.slash"))
-                            .font(.system(size: 18))
-                    }
-                    .buttonStyle(.plain).foregroundStyle(app.settings.readAloud ? AnyShapeStyle(Theme.primary) : AnyShapeStyle(.secondary))
-                    .help(app.voice.isSpeaking ? "Vorlesen stoppen" : "Antworten vorlesen an/aus")
-                    Menu {
-                        ForEach(ScreenCapture.Mode.allCases) { mode in
-                            Button { capture(mode) } label: { Label(mode.label, systemImage: mode.icon) }
-                        }
-                    } label: {
-                        Image(systemName: "camera.viewfinder").font(.system(size: 19))
-                    }
-                    // .borderlessButton zeichnet das Symbol als AppKit-Menüknopf (kleiner, ignoriert .font);
-                    // .button + .plain rendert es wie die übrigen Knöpfe der Leiste.
-                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-                    .foregroundStyle(.secondary)
-                    .help("Bildschirmfoto anhängen")
-                    Button { app.toggleTalkMode() } label: {
-                        Image(systemName: app.talkMode ? "waveform.circle.fill" : "waveform.circle").font(.system(size: 22))
-                            .symbolEffect(.variableColor.iterative, isActive: app.talkPhase == .speaking)
-                    }
-                    .buttonStyle(.plain).foregroundStyle(app.talkMode ? AnyShapeStyle(Theme.gold) : AnyShapeStyle(.secondary))
-                    .help("Gesprächsmodus: sprechen, Pause → abschicken, Antwort hören, weiter sprechen")
-                    Button { pickImages() } label: { Image(systemName: "paperclip").font(.system(size: 19)) }
-                        .buttonStyle(.plain).foregroundStyle(.secondary).help("Dateien anhängen: Bilder, PDF, Word, Excel, PowerPoint, Text, ZIP … (auch per Drag & Drop)")
+                    .help("Diktieren – wird auf dem Mac erkannt")
                     if session.isRunning {
                         Button { session.stop() } label: { Image(systemName: "stop.circle.fill").font(.system(size: 30)) }
                             .buttonStyle(.plain).foregroundStyle(.red)
+                            .help("Agent stoppen")
+                    } else if !canSend && !app.talkMode {
+                        // Leeres Feld: Sprechen statt Senden (wie der Sprachmodus bei ChatGPT)
+                        Button { app.toggleTalkMode() } label: {
+                            Image(systemName: "waveform.circle.fill").font(.system(size: 30))
+                        }
+                        .buttonStyle(.plain).foregroundStyle(Theme.brand)
+                        .help("Sprechen: reden, kurze Pause → wird abgeschickt, Antwort hören, weiterreden")
+                    } else if app.talkMode && !canSend {
+                        Button { app.toggleTalkMode() } label: {
+                            Image(systemName: "xmark.circle.fill").font(.system(size: 30))
+                                .symbolEffect(.variableColor.iterative, isActive: app.talkPhase == .speaking)
+                        }
+                        .buttonStyle(.plain).foregroundStyle(Theme.gold)
+                        .help("Sprechen beenden")
                     } else {
                         Button { app.send() } label: { Image(systemName: "arrow.up.circle.fill").font(.system(size: 30)) }
                             .buttonStyle(.plain).foregroundStyle(Theme.brand)
-                            .disabled(!app.canSendOrStart
-                                      || (session.input.trimmingCharacters(in: .whitespaces).isEmpty && session.attachments.isEmpty && session.documents.isEmpty))
+                            .disabled(!app.canSendOrStart)
+                            .help("Senden (↩)")
                     }
                 }
             }
@@ -598,32 +620,74 @@ private struct Composer: View {
         return !urls.isEmpty
     }
 
-    /// Denken, Ordner, YOLO – bei wenig Platz nur als Symbole.
-    @ViewBuilder private func toggles(compact: Bool) -> some View {
+    private var canSend: Bool {
+        let session = app.session
+        return !session.input.trimmingCharacters(in: .whitespaces).isEmpty || !session.attachments.isEmpty || !session.documents.isEmpty
+    }
+
+    /// „+“ wie bei ChatGPT: Dateien, Bildschirmfoto und die Schalter, die man selten braucht.
+    private var plusMenu: some View {
         @Bindable var session = app.session
-        HStack(spacing: 8) {
-            Toggle(isOn: $session.thinking) { label("Denken", "brain", compact) }
-                .toggleStyle(.button)
-                .help("Denken: das Modell überlegt erst und antwortet dann (langsamer, gründlicher)")
-            if session.mode.hasWorkspace {
-                Button { pickWorkspace() } label: {
-                    label(session.workspace.lastPathComponent.isEmpty ? "/" : session.workspace.lastPathComponent,
-                          session.mode == .code ? "folder.badge.gearshape" : "folder", compact)
+        @Bindable var settings = app.settings
+        return Menu {
+            Button { pickImages() } label: { Label("Dateien hinzufügen …", systemImage: "paperclip") }
+            Menu {
+                ForEach(ScreenCapture.Mode.allCases) { mode in
+                    Button { capture(mode) } label: { Label(mode.label, systemImage: mode.icon) }
                 }
-                .help("\(session.project == nil ? "Arbeitsordner" : "Projektordner"): \(session.workspace.path)")
-                Toggle(isOn: $session.autoApprove) { label("YOLO", session.autoApprove ? "flame.fill" : "flame", compact) }
-                    .toggleStyle(.button)
-                    .tint(session.autoApprove ? .orange : nil)
-                    .help(session.autoApprove
-                          ? "YOLO an: Werkzeuge laufen ohne Nachfrage\(session.dangerGuard ? " (außer zerstörerische Befehle)" : " – auch zerstörerische!")"
-                          : "YOLO-Modus: Agent fragt nicht mehr vor Schreiben, Shell, Browser-Aktionen und MCP-Aufrufen")
+            } label: { Label("Bildschirmfoto", systemImage: "camera.viewfinder") }
+            Divider()
+            Toggle(isOn: $session.thinking) { Label("Gründlich nachdenken (langsamer)", systemImage: "brain") }
+            if session.mode.hasWorkspace {
+                Toggle(isOn: $session.autoApprove) { Label("Ohne Nachfragen arbeiten", systemImage: "flame") }
+                Button { pickWorkspace() } label: {
+                    Label("Arbeitsordner: \(session.workspace.lastPathComponent) …", systemImage: "folder")
+                }
+            }
+            Toggle(isOn: $settings.readAloud) { Label("Antworten vorlesen", systemImage: "speaker.wave.2") }
+        } label: {
+            Image(systemName: "plus").font(.system(size: 14, weight: .semibold)).foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+                .background(.quaternary.opacity(0.7), in: Circle())
+                .contentShape(Circle())
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .help("Dateien, Bildschirmfoto, gründlich nachdenken, ohne Nachfragen arbeiten, Arbeitsordner, vorlesen")
+    }
+
+    /// Eingeschaltete Optionen als Chips – ein Klick schaltet sie wieder aus.
+    @ViewBuilder private var activeChips: some View {
+        let session = app.session
+        HStack(spacing: 6) {
+            if session.thinking {
+                chip("Nachdenken", "brain", Theme.primary, help: "Gründlich nachdenken ist an – klicken zum Ausschalten") { session.thinking = false }
+            }
+            if session.autoApprove && session.mode.hasWorkspace {
+                chip("Ohne Nachfragen", "flame.fill", .orange,
+                     help: "Der Agent schreibt Dateien, nutzt Terminal, Browser und Verbindungen ohne zu fragen\(session.dangerGuard ? " (außer zerstörerische Befehle)" : " – auch zerstörerische!"). Klicken zum Ausschalten.") {
+                    session.autoApprove = false
+                }
+            }
+            if app.voice.isSpeaking {
+                chip("Vorlesen stoppen", "speaker.wave.3.fill", Theme.primary, help: "Vorlesen beenden") { app.voice.stopSpeaking() }
             }
         }
         .fixedSize()
     }
 
-    private func label(_ title: String, _ icon: String, _ compact: Bool) -> some View {
-        Label(title, systemImage: icon).labelStyle(CompactLabelStyle(compact: compact))
+    private func chip(_ title: String, _ icon: String, _ tint: Color, help: String, off: @escaping () -> Void) -> some View {
+        Button(action: off) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                Text(title)
+                Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).opacity(0.7)
+            }
+            .font(.caption.weight(.medium)).foregroundStyle(tint)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(tint.opacity(0.13), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 
     private func pickWorkspace() {
@@ -975,13 +1039,6 @@ struct TalkBar: View {
         case .speaking: return "Danach höre ich automatisch wieder zu."
         case .off: return ""
         }
-    }
-}
-
-private struct CompactLabelStyle: LabelStyle {
-    let compact: Bool
-    func makeBody(configuration: Configuration) -> some View {
-        if compact { Label(configuration).labelStyle(.iconOnly) } else { Label(configuration).labelStyle(.titleAndIcon) }
     }
 }
 

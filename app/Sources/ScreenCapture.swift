@@ -34,12 +34,14 @@ enum ScreenCapture {
         case .area: args += ["-i", "-s"]        // Bereich ziehen
         case .window: args += ["-i", "-w"]      // Fenster anklicken
         }
-        let hide = mode == .screen && NSApp.isActive
+        // Im Terminal-Modus (--agent --headless) gibt es kein NSApp – dann nichts ausblenden.
+        let app: NSApplication? = NSApp
+        let hide = mode == .screen && app?.isActive == true
         if hide {
-            NSApp.hide(nil)
+            app?.hide(nil)
             try await Task.sleep(for: .milliseconds(350))
         }
-        defer { if hide { NSApp.unhide(nil) } }
+        defer { if hide { app?.unhide(nil) } }
         _ = try await Shell.exec(["/usr/sbin/screencapture"] + args + [file.path], cwd: FileManager.default.temporaryDirectory, timeout: 120)
         guard FileManager.default.fileExists(atPath: file.path) else {
             // Abgebrochen (Esc) oder keine Erlaubnis.
