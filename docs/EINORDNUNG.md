@@ -29,8 +29,9 @@ nicht:
 
 Deshalb übernimmt KI/lokal alles, was exakt sein muss: Der Agent schreibt in Tabellen Formeln (=C2*D2, =SUM(E2:E6)),
 die App rechnet sie aus – in Excel bleiben sie Formeln, in Word und PDF stehen die Zahlen – und meldet die Werte zurück,
-damit Chat und Dokument übereinstimmen. Dateien ändert der Agent nur über eigene Werkzeuge, mit Freigabe. Die Demos im
-Repository haben drei von drei Läufen richtig bestanden; was das nicht schaffte, ist nicht dabei.
+damit Chat und Dokument übereinstimmen. Dateien ändert der Agent nur über eigene Werkzeuge, mit Freigabe. Veröffentlicht sind nur
+Demos, die drei von drei Läufen richtig bestanden haben (Rechnungen, Angebot); was das nicht schaffte – Meeting mit
+Fristen, Umsatz-Auswertung, Vertragsprüfung, Handbuch-Fragen –, steht mit Grund in der [Demo-Übersicht](../demos/README.md).
 
 ## Gemessen, nicht geschätzt
 

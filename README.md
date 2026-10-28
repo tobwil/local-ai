@@ -11,7 +11,7 @@ Daten herausziehen, Entwürfe schreiben, Fragen zu eigenen Unterlagen beantworte
 **Das Modell versteht, die App rechnet und handelt.** Summen und Beträge in Tabellen rechnet KI/lokal selbst aus (der
 Agent schreibt Formeln, keine Zahlen), Dateien ändert es nur über eigene Werkzeuge mit Freigabe. Lange, verschachtelte
 Aufträge über viele Schritte und große Programmierprojekte sind auf einem 24-GB-Mac nicht zuverlässig – dafür ist der
-Cloud-Experte da. Die [Demos](demos/README.md) zeigen nur, was in drei von drei Läufen richtig war.
+Cloud-Experte da. Die [Demos](demos/README.md) zeigen nur, was in drei von drei Läufen richtig war – und offen, was noch nicht.
 
 ⚖️ **[Ehrliche Einordnung](docs/EINORDNUNG.md)** – Vor- und Nachteile, reale Anwendungsszenarien und der Vergleich mit
 ChatGPT, Claude, Gemini und Microsoft Copilot. Kurz: für einen großen Teil der Alltagsarbeit eine echte Alternative,
@@ -216,18 +216,16 @@ Daten liegen unter `~/.kilokal/` (Engine, Modelle, Skills, Plugins, Gespräche, 
 
 ## Demos für den Alltag
 
-Echte Büroaufgaben mit Beispieldateien – und dem Ergebnis, das KI/lokal auf einem MacBook Air M4 (24 GB) offline erzeugt hat:
-**[demos/](demos/README.md)**
+Echte Büroaufgaben mit Beispieldateien und dem Ergebnis, das KI/lokal offline auf einem MacBook Air (24 GB) erzeugt hat –
+**nur, was in drei von drei Läufen richtig war**: **[demos/](demos/README.md)**
 
-| Demo | Was passiert |
-|---|---|
-| [Rechnungen ordnen](demos/rechnungen-ordnen/) | PDF-Rechnungen → einheitlich benannt, nach Monat sortiert, Excel-Übersicht mit Summen |
-| [Angebot schreiben](demos/angebot-schreiben/) | Kundenmail + Preisliste → Angebot als Word-Datei mit Budget-Abgleich |
-| [Meeting nachbereiten](demos/meeting-nachbereitung/) | Aufnahme → Protokoll, Aufgaben mit Fristen, Follow-up-Mail |
-| [Umsätze auswerten](demos/umsatz-auswerten/) | Excel → PDF-Bericht mit Gewinn je Bereich und Empfehlungen |
-| [Vertrag durchsehen](demos/vertrag-pruefen/) | Gewerbemietvertrag → Fristen mit Datum, Gesamtkosten, auffällige Klauseln |
-| [Fragen ans Handbuch](demos/handbuch-fragen/) | interne Regeln → Antworten mit Quelle |
-| [Automationen](demos/automationen/) | Morgen-Briefing, Webseite beobachten ohne Modell |
+| Demo | Was passiert | Dauer |
+|---|---|---|
+| [Rechnungen ordnen](demos/rechnungen-ordnen/) | 6 PDF-Rechnungen → Excel-Übersicht mit Summen je Monat und gesamt | 1–2 Min. |
+| [Angebot schreiben](demos/angebot-schreiben/) | Kundenmail + Preisliste → Angebot als Word-Datei mit Rabatt und USt | 1–5 Min. |
+
+Was wir ebenfalls gebaut haben und (noch) nicht zuverlässig klappt – Meeting-Protokoll mit Fristen, Umsatz-Auswertung,
+Vertragsprüfung, Fragen ans Handbuch –, steht offen in der [Demo-Übersicht](demos/README.md#noch-nicht-zuverlässig-deshalb-nicht-veröffentlicht).
 
 ## Nächste Schritte
 

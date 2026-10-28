@@ -23,7 +23,7 @@ extension BuiltinTools {
                                           ("sum", "array", "Zahlenspalten zum Summieren, z. B. [\"Umsatz\", \"Kosten\"] (leer = alle Zahlenspalten)"),
                                           ("derived", "array", "Abgeleitete Spalten, z. B. [\"Gewinn = Umsatz - Kosten\"]")], required: ["path"]),
                       needsApproval: false, source: "Eingebaut") { args in
-                let url = resolve(try string(args, "path"), in: workspace())
+                let url = locate(resolve(try string(args, "path"), in: workspace()), in: workspace())
                 return try TableSummary.run(url: url, groupBy: args["group_by"] as? String,
                                             sum: (args["sum"] as? [Any])?.map { "\($0)" } ?? [],
                                             derived: (args["derived"] as? [Any])?.map { "\($0)" } ?? [])
