@@ -376,11 +376,30 @@ enum SelfTest {
                 throw ToolError.invalid("Schreiben im Arbeitsordner gesperrt: \(out)")
             }
             guard !FileManager.default.fileExists(atPath: probe.path) else { throw ToolError.invalid("Schreiben im Benutzerordner ging durch") }
+            // Ausbruch über andere Prozesse: osascript startet Befehle über Apple Events, launchctl über launchd.
+            let escape = try await Shell.run("osascript -e 'return \"ausgebrochen\"' 2>&1; launchctl list >/dev/null 2>&1 && echo launchd-offen",
+                                             cwd: tmp, sandboxed: true)
+            guard !escape.contains("ausgebrochen"), !escape.contains("launchd-offen") else {
+                throw ToolError.invalid("Ausweg aus der Sandbox offen: \(escape)")
+            }
             guard AgentSession.dangerReason(tool: "read_file", args: ["path": "~/.ssh/id_ed25519"]) != nil,
                   AgentSession.dangerReason(tool: "run_shell", args: ["command": "cat ~/.aws/credentials"]) != nil else {
                 throw ToolError.invalid("Zugangsdaten nicht von der Notbremse erkannt")
             }
-            return "Arbeitsordner beschreibbar, Benutzerordner gesperrt, Zugangsdaten fragen nach"
+            return "Arbeitsordner beschreibbar, Benutzerordner gesperrt, osascript/launchctl gesperrt, Zugangsdaten fragen nach"
+        }) { failed += 1 }
+
+        if !(await check("Antwort-Prüfung & Wiederholungen") {
+            guard ReplyCheck.claimsFileChanges("Ich habe alle Fotos umbenannt."), !ReplyCheck.claimsFileChanges("Soll ich die Fotos umbenennen?"),
+                  ReplyCheck.asksToProceed("Hier ist mein Plan. Soll ich loslegen?"), !ReplyCheck.asksToProceed("Fertig. Soll ich noch nach Datum sortieren?"),
+                  ReplyCheck.missingFiles("Gespeichert als „Bericht Oktober.pdf“.", exists: { _ in false }) == ["Bericht Oktober.pdf"] else {
+                throw ToolError.invalid("Antwort-Prüfung")
+            }
+            let absatz = "Montag: Team-Runde um neun, danach Kundentermin bei Huber. Dienstag frei, Mittwoch Steuerberater um elf Uhr im Büro. "
+            guard RepeatGuard.cut(absatz + absatz) == nil, RepeatGuard.cut(absatz + absatz + absatz) != nil else {
+                throw ToolError.invalid("Wiederholungs-Erkennung")
+            }
+            return "Behauptungen, Rückfragen, fehlende Dateien und Schleifen erkannt"
         }) { failed += 1 }
 
         if !(await check("Lektionen, Plan, Überwachung") {

@@ -250,9 +250,22 @@ und **warum** gefragt wird. Wahl: *Ablehnen*, *Erlauben* oder *Für dieses Gespr
   sie landen weder im Verlauf des Modells noch im Protokoll.
 - **Sandbox** (Einstellungen → Agent): Shell-Befehle, die ohne deine Freigabe laufen (*Ohne Nachfragen*, Automationen, `--yolo` im
   Terminal), laufen in der macOS-Sandbox. Schreiben geht dort nur im Arbeitsordner, in `/tmp` und in Cache-Ordnern;
-  Zugangsdaten sind gesperrt, Shell-Startdateien (`.zshrc` …), LaunchAgents und `~/.kilokal` geschützt. Was du einzeln
+  Zugangsdaten sind gesperrt, Shell-Startdateien (`.zshrc` …), LaunchAgents und `~/.kilokal` geschützt. Andere Apps
+  steuern (`osascript`, `open`, Apple Events, `launchctl`) geht in der Sandbox nicht – darüber ließe sie sich sonst umgehen. Was du einzeln
   freigibst, läuft im Standard ohne Sandbox; wahlweise *Immer* oder *Aus*.
 - Jede Aktion steht im **Protokoll** (wer, was, freigegeben/ohne Nachfragen/abgelehnt, Ergebnis).
+
+### Antworten, die die App prüft
+
+Kleine Modelle behaupten manchmal, etwas getan zu haben, das nie passiert ist. KI/lokal glaubt das nicht einfach:
+
+- Sagt die Antwort „umbenannt“, „verschoben“ oder „gelöscht“, aber kein Werkzeug hat etwas geändert, oder nennt sie
+  eine gespeicherte Datei, die es nicht gibt, schickt die App den Agenten einmal zurück an die Arbeit. Klappt es dann
+  immer noch nicht, steht ein deutlicher Hinweis unter der Antwort.
+- Fragt der Agent trotz klarem Auftrag „Soll ich loslegen?“ oder hört er wortlos mittendrin auf, macht er weiter.
+- Schreibt das Modell denselben Absatz immer wieder, bricht die App ab – mit **Neu generieren** gibt es einen neuen Versuch.
+- Angehängte Fotos schaut sich das Vision-Modell an, wenn das gewählte Modell keine Bilder versteht (Hinweis oben:
+  „… sieht sich das Bild an“). Auf kleinen Macs wechselt die Engine dafür kurz das Modell.
 
 ### Lektionen: aus Fehlern lernen
 

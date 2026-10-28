@@ -137,6 +137,16 @@ Arbeiten · Code).
   der Agent selbst lesen kann, lösen eine Erinnerung aus; `replace_lines` ersetzt ganze Blöcke per Zeilennummer;
   `edit_file` gleicht abweichende Einrückung aus und zeigt sonst die ähnlichste Stelle; `write_file` warnt, wenn beim
   Überschreiben Funktionen verloren gehen; die Browser-Prüfung erkennt auch hängende Seiten.
+- **Antwort-Prüfung (angelehnt an [Hob](https://github.com/FrigadeHQ/hob)):** Behauptet die Antwort, Dateien seien
+  umbenannt/verschoben/gelöscht, ohne dass ein ändernder Aufruf lief, nennt sie gespeicherte Dateien, die es nicht gibt
+  (geprüft auf der Platte, unabhängig von der Sprache), fragt sie trotz klarem Auftrag „Soll ich loslegen?“ oder endet sie
+  mitten in der Arbeit ohne ein Wort, hakt die App einmal nach – sonst steht ein klarer Hinweis unter der Antwort.
+- **Schleifen abbrechen:** Schreibt das Modell denselben langen Absatz dreimal hintereinander, bricht die App die Antwort
+  dort ab. Derselbe lesende Aufruf noch einmal (ohne Änderung dazwischen) bekommt sofort das frühere Ergebnis; eine
+  URL in `read_file` wird zu `fetch_url`.
+- **Fotos für Modelle ohne Augen:** Versteht das gewählte Modell keine Bilder (z. B. Ornith), beschreibt vorher das
+  Vision-Modell angehängte Fotos samt Text darauf; das Hauptmodell arbeitet mit der Beschreibung.
+- **Uhrzeit an jeder Nachricht** statt im Systemprompt – der Anfang des Verlaufs bleibt gleich, der Prompt-Cache greift.
 - **Speicher (24 GB):** Werkzeug-Ergebnisse und selbst geschriebene Dateiinhalte werden beim Eintragen in den Verlauf
   gekürzt (Prompt-Cache bleibt gültig), der Verlauf wird früh verdichtet, bei „memory guard“ automatisch stärker gekürzt und
   wiederholt; im Code-Projekt schlanker Systemprompt ohne fremde MCP-Werkzeuge.
@@ -156,7 +166,8 @@ nicht (oder mit `--headless`), arbeitet der Agent ohne Oberfläche; die Notbrems
 führt alles ohne Nachfrage aus. Die abschaltbare **Notbremse** fragt trotzdem bei `sudo`, `rm -rf`, `git push --force`, `git reset --hard`,
 `curl … | sh`, Systembefehlen, beim Schreiben außerhalb des Benutzerordners und bei jedem Zugriff auf Zugangsdaten (`~/.ssh`,
 `~/.aws`, Schlüsselbund …). Shell-Befehle ohne Freigabe (*Ohne Nachfragen*, Automationen) laufen in einer **macOS-Sandbox**
-(`sandbox-exec`: Schreiben nur im Arbeitsordner, `/tmp` und Caches; Zugangsdaten gesperrt). API-Schlüssel und private
+(`sandbox-exec`: Schreiben nur im Arbeitsordner, `/tmp` und Caches; Zugangsdaten gesperrt; keine Apple Events,
+kein `open`, `osascript` oder `launchctl` – sonst ließen sich Befehle über andere Apps außerhalb der Sandbox starten). API-Schlüssel und private
 Schlüssel in Werkzeug-Ergebnissen werden ausgeblendet, bevor sie in den Verlauf oder ins Protokoll gelangen.
 
 **Browser einrichten:** im Browser „JavaScript von Apple Events erlauben“ einschalten (Chrome/Brave/Edge: Ansicht → Entwickler;

@@ -48,6 +48,9 @@ final class AgentSession {
     var input = ""
     /// Angehängte Bilder (JPEG) für die nächste Nachricht.
     var attachments: [Data] = []
+    /// Beschreibungen der angehängten Bilder vom Vision-Modell (gesetzt, wenn das Hauptmodell keine Bilder versteht):
+    /// Dann gehen statt der Bilder diese Texte ans Modell; im Chat bleiben die Bilder sichtbar.
+    var imageNotes: [String]?
     /// Angehängte Dateien (PDF, Word, Excel, PowerPoint, Text, ZIP, alles andere) für die nächste Nachricht.
     var documents: [URL] = []
     /// Projekte gruppieren Gespräche; nil = ohne Projekt.
@@ -109,6 +112,13 @@ final class AgentSession {
     @ObservationIgnored private var userTask = ""
     /// Namen der in diesem Auftrag erfolgreich genutzten Werkzeuge (für die Erkennung wiederholter Abläufe).
     @ObservationIgnored private var runTools: [String] = []
+    /// Antwort-Prüfung (ReplyCheck) hat in diesem Auftrag schon einmal nachgehakt.
+    @ObservationIgnored private var replyChecked = false
+    /// In diesem Auftrag hat der Nutzer etwas abgelehnt (dann ist Nachfragen in Ordnung).
+    @ObservationIgnored private var deniedInRun = false
+    /// Ergebnisse lesender Aufrufe in diesem Auftrag – derselbe Aufruf noch einmal bekommt sie sofort zurück,
+    /// solange seitdem nichts geändert wurde.
+    @ObservationIgnored private var callCache: [String: String] = [:]
     /// Die App wird gerade beendet: Ein laufender Auftrag bleibt als unterbrochen gespeichert (→ „Fortsetzen“).
     @ObservationIgnored private var quitting = false
     /// Plan des Agenten (Markdown-Checkliste über update_plan); überdauert Verdichten und Neustarts.
@@ -282,8 +292,12 @@ final class AgentSession {
         if answeredBefore, tools.contains(where: { $0.name == "learn_lesson" }), LessonStore.isCorrection(text) {
             text += "\n\n(Hinweis der App: Das klingt nach einer Korrektur. Setze sie um. Gilt sie über diese Aufgabe hinaus, halte sie mit learn_lesson als kurze Regel fest.)"
         }
+        let described = imageNotes.flatMap { $0.count == images.count && !images.isEmpty ? $0 : nil }
+        imageNotes = nil
+        if let described { text += "\n\n" + described.joined(separator: "\n") }
+        text += MessageNote.time()
         items.append(Item(kind: .user(shown, images: images)))
-        if images.isEmpty {
+        if images.isEmpty || described != nil {
             history.append(["role": "user", "content": text])
         } else {
             let parts: [[String: Any]] = [["type": "text", "text": text]] + images.map {
@@ -312,6 +326,9 @@ final class AgentSession {
         nudges = 0
         recentCalls = []
         runTools = []
+        replyChecked = false
+        deniedInRun = false
+        callCache = [:]
         repeatedChats = []
         // Fortsetzungen („Mach weiter …“) gehören zum bisherigen Auftrag – der Qualitäts-Check prüft gegen den ursprünglichen.
         if !shown.hasPrefix(Checkpoint.continuePrefix) || userTask.isEmpty { userTask = String(shown.prefix(1500)) }
@@ -404,7 +421,9 @@ final class AgentSession {
         let edited = newText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isRunning, !edited.isEmpty, let t = lastTurn, case let .user(shown, images) = items[t.item].kind else { return }
         // Dateiinhalte stehen im Verlauf hinter dem Text („📎 Angehängt: …“) – die bleiben, nur der Text wird ersetzt.
-        func replaced(_ old: String) -> String { edited + (old.range(of: "\n\n📎 Angehängt:").map { String(old[$0.lowerBound...]) } ?? "") }
+        func replaced(_ old: String) -> String {
+            MessageNote.strip(edited + (old.range(of: "\n\n📎 Angehängt:").map { String(old[$0.lowerBound...]) } ?? "")) + MessageNote.time()
+        }
         var content: Any = edited
         if let old = history[t.history]["content"] as? String {
             content = replaced(old)
@@ -580,12 +599,14 @@ final class AgentSession {
             var tFirst: Date?
             var chunks = 0
             var truncated = false
+            var looped = false
+            var unchecked = 0
 
             do {
-                for try await ev in LLMClient.stream(model: model, messages: history, tools: specs,
-                                                     thinking: thinking, maxTokens: context.maxTokens, mtp: context.mtp) {
+                stream: for try await ev in LLMClient.stream(model: model, messages: history, tools: specs,
+                                                             thinking: thinking, maxTokens: context.maxTokens, mtp: context.mtp) {
                     switch ev {
-                    case let .content(c): text += c
+                    case let .content(c): text += c; unchecked += c.utf16.count
                     case let .reasoning(r): thought += r
                     case let .toolCalls(c): calls = c; continue
                     case let .usage(p, c): prompt = p; completion = c; continue
@@ -599,6 +620,15 @@ final class AgentSession {
                         liveTokPerSec = Double(chunks - 1) / now.timeIntervalSince(f)
                     }
                     setKind(itemID, .assistant(text: text, thinking: thought, stats: nil))
+                    // Festgefahren? Derselbe lange Absatz dreimal am Stück → Stream beenden (bricht die Anfrage ab).
+                    if unchecked >= 48 {
+                        unchecked = 0
+                        if let cut = RepeatGuard.cut(text) {
+                            text = RepeatGuard.prefix(text, utf16Offset: cut)
+                            looped = true
+                            break stream
+                        }
+                    }
                 }
             } catch {
                 // Zu lange Eingabe für den Speicher? Stärker verdichten und den Schritt wiederholen.
@@ -643,6 +673,12 @@ final class AgentSession {
                 }
                 return
             }
+            if looped {
+                setKind(itemID, .assistant(text: text, thinking: thought, stats: stats))
+                history.append(["role": "assistant", "content": text + "\n\n(Ab hier wiederholte sich die Antwort – von der App abgebrochen.)"])
+                items.append(Item(kind: .error(Self.qualityPrefix + ": Das Modell hat denselben Absatz immer wieder geschrieben – Antwort an der Stelle abgebrochen. „Neu generieren“ versucht es noch einmal.")))
+                return
+            }
             var assistant: [String: Any] = ["role": "assistant", "content": text]
             if !calls.isEmpty {
                 assistant["tool_calls"] = calls.map {
@@ -671,6 +707,22 @@ final class AgentSession {
                         nudges += 1
                         history.append(["role": "user", "content": "(Hinweis der App: Du hast nur angekündigt, aber kein Werkzeug aufgerufen. Führe den nächsten Schritt jetzt direkt mit einem Werkzeug aus – nicht beschreiben, machen.)"])
                         continue
+                    }
+                }
+                // Antwort prüfen: behauptete Änderungen, genannte Dateien, die es nicht gibt, „Soll ich loslegen?“, leeres Ende.
+                // Einmal nachhaken; bleibt es dabei, sieht der Nutzer einen klaren Hinweis statt einer falschen Behauptung.
+                if let check = replyCheck(text, tools: tools) {
+                    if !replyChecked, step < context.maxSteps - 1 {
+                        replyChecked = true
+                        items.removeAll { $0.id == itemID }
+                        items.append(Item(kind: .error(Self.qualityPrefix + ": " + check.label)))
+                        history.append(["role": "user", "content": check.note(ran: ranSummary)])
+                        continue
+                    }
+                    switch check {
+                    case .claim: items.append(Item(kind: .error(Self.qualityPrefix + ": Achtung – in diesem Auftrag wurde keine Datei geändert, auch wenn die Antwort es sagt.")))
+                    case let .missing(names): items.append(Item(kind: .error(Self.qualityPrefix + ": Achtung – \(names.prefix(3).joined(separator: ", ")) gibt es nicht, auch wenn die Antwort sie nennt.")))
+                    default: break
                     }
                 }
                 // Qualitäts-Check: Hat der Agent Code geändert, prüft die App alles noch einmal und lässt ihn
@@ -703,9 +755,19 @@ final class AgentSession {
 
             for call in calls {
                 if Task.isCancelled { return }
-                var result = await execute(call, tools: tools)
-                // Schleife? Derselbe Aufruf mit denselben Argumenten zum dritten Mal → Hinweis statt stur weiter
                 let signatur = call.name + "|" + call.arguments
+                var result: String
+                if Self.cacheableTools.contains(call.name), let earlier = callCache[signatur] {
+                    // Derselbe lesende Aufruf, seitdem nichts geändert: früheres Ergebnis statt erneut ausführen.
+                    result = "(Hinweis der App: Genau diesen Aufruf hast du in diesem Auftrag schon gemacht, seitdem wurde nichts geändert. Das Ergebnis von damals:)\n" + String(earlier.prefix(2_000)) + "\n(Wiederhole ihn nicht – mach mit dem nächsten Schritt weiter.)"
+                } else {
+                    let before = runTools.count
+                    result = await execute(call, tools: tools)
+                    if runTools.count > before {
+                        if Self.cacheableTools.contains(call.name) { callCache[signatur] = result } else { callCache.removeAll() }
+                    }
+                }
+                // Schleife? Derselbe Aufruf mit denselben Argumenten zum dritten Mal → Hinweis statt stur weiter
                 recentCalls.append(signatur)
                 if recentCalls.count > 6 { recentCalls.removeFirst() }
                 if recentCalls.filter({ $0 == signatur }).count >= 3 {
@@ -727,6 +789,14 @@ final class AgentSession {
     }
 
     private func execute(_ call: LLMClient.ToolCall, tools: [AgentTool]) async -> String {
+        var call = call
+        // Kleine Modelle geben Web-Adressen an read_file: dann die Seite abrufen, statt sie auf der Platte zu suchen.
+        if call.name == "read_file", tools.contains(where: { $0.name == "fetch_url" }),
+           let path = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any])?["path"] as? String,
+           path.range(of: #"^\s*https?://"#, options: [.regularExpression, .caseInsensitive]) != nil,
+           let data = try? JSONSerialization.data(withJSONObject: ["url": path.trimmingCharacters(in: .whitespaces)]) {
+            call = LLMClient.ToolCall(id: call.id, name: "fetch_url", arguments: String(decoding: data, as: UTF8.self))
+        }
         let tool = tools.first { $0.name == call.name }
         let itemID = UUID()
         let args = prettyJSON(call.arguments)
@@ -752,6 +822,7 @@ final class AgentSession {
             if ok { parsed[ShellSandbox.approvedKey] = true }
             if dangerous != nil { approval = "Notbremse → " + (ok ? "freigegeben" : "abgelehnt") }
             guard ok else {
+                deniedInRun = true
                 update(.denied, "Abgelehnt")
                 ActionLog.log(context: "Chat", tool: tool.name, source: tool.source, arguments: args, approval: "abgelehnt",
                               ok: false, started: started, result: "")
@@ -782,6 +853,53 @@ final class AgentSession {
             ActionLog.log(context: "Chat", tool: tool.name, source: tool.source, arguments: args, approval: approval,
                           ok: false, started: started, result: error.localizedDescription)
             return "Fehler: \(error.localizedDescription)"
+        }
+    }
+
+    /// Lesende Werkzeuge: Ergebnis hängt nur vom Stand der Dateien/des Webs ab (für callCache).
+    static let cacheableTools: Set<String> = BuiltinTools.readOnly.union(["search_documents", "calendar_events", "reminders_list",
+                                                                          "contacts_search", "mail_recent"])
+    /// Werkzeuge, die keine Dateien ändern – laufen nur diese, ist „umbenannt/gespeichert“ in der Antwort unbelegt.
+    static let noFileChanges: Set<String> = cacheableTools.union(["remember", "forget", "learn_lesson", "update_plan", "notify",
+                                                                  "clipboard_read", "clipboard_write", "look_at_screen", "browser_tabs",
+                                                                  "browser_read", "ask_expert"])
+
+    /// Was in diesem Auftrag lief (für die Hinweise der Antwort-Prüfung).
+    private var ranSummary: [String] {
+        var seen = Set<String>()
+        return runTools.filter { seen.insert($0).inserted }
+    }
+
+    /// Prüft eine fertige Antwort (ohne Werkzeug-Aufruf) gegen das, was wirklich geschah.
+    private func replyCheck(_ text: String, tools: [AgentTool]) -> ReplyCheck? {
+        guard !tools.isEmpty else { return nil }
+        let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if reply.isEmpty { return runTools.isEmpty ? nil : .unfinished }
+        let changed = runTools.contains { !Self.noFileChanges.contains($0) }
+        guard !changed else { return nil }
+        if mode != .chat, ReplyCheck.claimsFileChanges(reply) { return .claim }
+        if tools.contains(where: { ["write_file", "create_document"].contains($0.name) }), ReplyCheck.mentionsSaving(reply) {
+            let missing = ReplyCheck.missingFiles(reply, exists: knownFile)
+            if !missing.isEmpty { return .missing(missing) }
+        }
+        if mode != .chat, !deniedInRun, !userTask.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?"),
+           ReplyCheck.asksToProceed(reply) { return .proceed }
+        return nil
+    }
+
+    /// Gibt es die Datei – auf der Platte (Arbeitsordner, eine Ebene darunter, voller Pfad) oder schon im Gespräch
+    /// (vom Nutzer genannt, in einem Werkzeug-Ergebnis)? Dann ist sie keine Erfindung der Antwort.
+    private func knownFile(_ name: String) -> Bool {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: BuiltinTools.resolve(name, in: workspace).path) { return true }
+        let file = (name as NSString).lastPathComponent
+        let children = (try? fm.contentsOfDirectory(at: workspace, includingPropertiesForKeys: nil)) ?? []
+        if children.contains(where: { fm.fileExists(atPath: $0.appendingPathComponent(file).path) }) { return true }
+        // Die letzte Nachricht im Verlauf ist die geprüfte Antwort selbst.
+        return history.dropLast().contains { m in
+            if let c = m["content"] as? String { return c.contains(file) }
+            if let parts = m["content"] as? [[String: Any]] { return parts.contains { ($0["text"] as? String)?.contains(file) == true } }
+            return false
         }
     }
 

@@ -71,8 +71,20 @@ enum ShellSandbox {
         for rel in protectedFiles { p += "\n  (subpath \(under(rel)))" }
         p += ")\n(allow file-write* (subpath \(under(".kilokal/skills"))))\n(deny file-read* file-write*"
         for rel in secretPaths { p += "\n  (subpath \(under(rel)))" }
-        return p + ")\n"
+        // Auswege aus der Sandbox: Apple Events (osascript → Terminal „do script“), LaunchServices (`open x.command`)
+        // und launchd-Jobs würden Befehle in Prozessen starten, für die dieses Profil nicht gilt.
+        p += ")\n" + """
+        (deny appleevent-send)
+        (deny mach-lookup (global-name "com.apple.coreservices.launchservicesd") (global-name "com.apple.lsd.mapdb")
+          (global-name "com.apple.lsd.modifydb") (global-name "com.apple.coreservices.quarantine-resolver"))
+        (deny process-exec \(escapeExecutables.map { "(literal \"\($0)\")" }.joined(separator: " ")))
+
+        """
+        return p
     }
+
+    /// Programme, die Befehle außerhalb der Sandbox starten können – darin gar nicht erst ausführbar.
+    static let escapeExecutables = ["/usr/bin/osascript", "/usr/bin/open", "/bin/launchctl", "/usr/bin/automator", "/usr/bin/shortcuts"]
 
     static func argv(command: String, workspace: URL) -> [String] {
         ["/usr/bin/sandbox-exec", "-p", profile(workspace: workspace), "/bin/zsh", "-l", "-c", command]
@@ -83,7 +95,7 @@ enum ShellSandbox {
         let lower = output.lowercased()
         guard ["operation not permitted", "read-only file system", "sandbox", "permission denied"].contains(where: lower.contains)
         else { return nil }
-        return "(Hinweis der App: Der Befehl lief in der Sandbox – Schreiben ist nur im Arbeitsordner, in /tmp und in Cache-Ordnern erlaubt, Zugangsdaten wie ~/.ssh sind gesperrt. Arbeite innerhalb des Arbeitsordners. Ist der Zugriff wirklich nötig, sag dem Nutzer, welcher Befehl es ist – er kann ihn ohne YOLO einzeln freigeben.)"
+        return "(Hinweis der App: Der Befehl lief in der Sandbox – Schreiben ist nur im Arbeitsordner, in /tmp und in Cache-Ordnern erlaubt, Zugangsdaten wie ~/.ssh sind gesperrt, andere Apps steuern (osascript, open, launchctl) geht nicht. Arbeite innerhalb des Arbeitsordners. Ist der Zugriff wirklich nötig, sag dem Nutzer, welcher Befehl es ist – er kann ihn ohne YOLO einzeln freigeben.)"
     }
 }
 

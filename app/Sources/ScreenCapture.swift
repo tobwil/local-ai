@@ -67,32 +67,37 @@ enum ScreenCapture {
                 throw ToolError.invalid("Kein Vision-Modell installiert (z. B. Qwen 3.6 · Vision unter Modelle laden).")
             }
             guard let jpeg = try await capture(.screen) else { throw ToolError.invalid("Kein Bild aufgenommen") }
-            let messages: [[String: Any]] = [["role": "user", "content": [
-                ["type": "text", "text": question + " Antworte präzise auf Deutsch."],
-                ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(jpeg.base64EncodedString())"]],
-            ]]]
-            // Ein eigenes Vision-Modell passt auf kleinen Macs nicht neben das Hauptmodell: vorher das Hauptmodell,
-            // danach das Vision-Modell entladen – sonst kann die Engine das Hauptmodell nicht mehr laden (Fehler 507).
-            let main = await mainModel()
-            let separate = model != main
-            let small = ProcessInfo.processInfo.physicalMemory < 48 * 1_073_741_824
-            if separate && small { await LLMClient.unload(model: main) }
-            var text = ""
-            do {
-                for try await ev in LLMClient.stream(model: model, messages: messages, tools: [], thinking: false, maxTokens: 1200, mtp: false) {
-                    if case let .content(c) = ev { text += c }
-                }
-            } catch {
-                if separate { await LLMClient.unload(model: model) }
-                throw error
-            }
-            if separate { await LLMClient.unload(model: model) }
-            let seen = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if seen.hasPrefix("[Error") { throw ToolError.invalid("Vision-Modell: \(seen.prefix(300))") }
-            guard !seen.isEmpty else {
-                throw ToolError.invalid("Das Vision-Modell hat nichts erkannt. Nicht erneut versuchen – nutze andere Werkzeuge (browser_tabs, web_search).")
-            }
+            let text = try await see(jpeg, question: question + " Antworte präzise auf Deutsch.", model: model, mainModel: await mainModel())
             return "Bildschirm (gesehen von \(CloudModels.displayName(model))):\n\(text)"
         }
+    }
+
+    /// Ein Bild vom Vision-Modell beschreiben lassen (für look_at_screen und für angehängte Fotos, wenn das Hauptmodell
+    /// keine Bilder versteht). Ein eigenes Vision-Modell passt auf kleinen Macs nicht neben das Hauptmodell: vorher das
+    /// Hauptmodell, danach das Vision-Modell entladen – sonst kann die Engine das Hauptmodell nicht mehr laden (Fehler 507).
+    static func see(_ jpeg: Data, question: String, model: String, mainModel main: String) async throws -> String {
+        let messages: [[String: Any]] = [["role": "user", "content": [
+            ["type": "text", "text": question],
+            ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(jpeg.base64EncodedString())"]],
+        ]]]
+        let separate = model != main
+        let small = ProcessInfo.processInfo.physicalMemory < 48 * 1_073_741_824
+        if separate && small { await LLMClient.unload(model: main) }
+        var text = ""
+        do {
+            for try await ev in LLMClient.stream(model: model, messages: messages, tools: [], thinking: false, maxTokens: 1200, mtp: false) {
+                if case let .content(c) = ev { text += c }
+            }
+        } catch {
+            if separate { await LLMClient.unload(model: model) }
+            throw error
+        }
+        if separate { await LLMClient.unload(model: model) }
+        let seen = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if seen.hasPrefix("[Error") { throw ToolError.invalid("Vision-Modell: \(seen.prefix(300))") }
+        guard !seen.isEmpty else {
+            throw ToolError.invalid("Das Vision-Modell hat nichts erkannt. Nicht erneut versuchen – nutze andere Werkzeuge (browser_tabs, web_search).")
+        }
+        return seen
     }
 }

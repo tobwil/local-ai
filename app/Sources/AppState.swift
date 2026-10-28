@@ -499,10 +499,38 @@ final class AppState {
             Task { if await ensureEngine() { send(adjust: adjust) } }
             return
         }
+        guard !describingImages else { return }
         if voice.isListening { voice.stopListening() }
         let (model, context) = runSetup(for: session.input, adjust: adjust)
+        // Fotos für ein Modell ohne Bildverständnis (z. B. Ornith): vorher vom Vision-Modell beschreiben lassen.
+        // Sonst rät das Hauptmodell aus dem Dateinamen oder sieht gar nichts.
+        if !session.attachments.isEmpty, !CloudModels.isCloud(model), ModelCatalog.model(id: model)?.vision != true,
+           let vision = visionModelID, vision != model {
+            let images = session.attachments
+            let question = session.input.trimmingCharacters(in: .whitespacesAndNewlines)
+            describingImages = true
+            notice = "\(CloudModels.displayName(vision)) sieht sich \(images.count == 1 ? "das Bild" : "die \(images.count) Bilder") an …"
+            Task {
+                var notes: [String] = []
+                for (i, jpeg) in images.enumerated() {
+                    let ask = "Beschreibe genau, was auf dem Bild zu sehen ist, und gib allen lesbaren Text wörtlich wieder."
+                        + (question.isEmpty ? "" : " Der Nutzer fragt dazu: \(question.prefix(500))") + " Antworte auf Deutsch."
+                    let seen: String
+                    do { seen = try await ScreenCapture.see(jpeg, question: ask, model: vision, mainModel: model) }
+                    catch { seen = "(konnte nicht angesehen werden: \(error.localizedDescription))" }
+                    notes.append("[Bild \(i + 1), angesehen von \(CloudModels.displayName(vision)): \(seen)]")
+                }
+                describingImages = false
+                session.imageNotes = notes
+                session.send(model: model, tools: modeTools, context: context)
+            }
+            return
+        }
         session.send(model: model, tools: modeTools, context: context)
     }
+
+    /// Das Vision-Modell beschreibt gerade angehängte Bilder (Senden wartet so lange).
+    private(set) var describingImages = false
 
     /// Vorgemerkte Nachricht abschicken (nach dem Ende eines Auftrags).
     func sendQueued() {

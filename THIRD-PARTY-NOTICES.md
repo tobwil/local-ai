@@ -25,6 +25,14 @@ You may obtain a copy of the License at
 Die Konzepte hinter Lektionen, Überwachungen ohne Modellaufruf, Wiederaufnahme langer Aufträge und der
 Shell-Sandbox sind von KiroCrew inspiriert; der Code in KI/lokal ist eigenständig in Swift geschrieben.
 
+## Hob (MIT License)
+
+Die Antwort-Prüfung (`app/Sources/ReplyChecks.swift`: behauptete Dateiänderungen, genannte Dateien ohne Datei,
+„Soll ich loslegen?“, leeres Ende, Wiederholungs-Erkennung), die Uhrzeit pro Nachricht, das Zurückgeben gleicher
+Aufrufe, das Vorab-Ansehen angehängter Fotos und die Sperre von Apple Events/LaunchServices in der Sandbox folgen
+Ideen aus Hob (https://github.com/FrigadeHQ/hob, Copyright (c) 2026 Frigade, MIT License). Der Code ist in Swift neu
+geschrieben und auf Deutsch angepasst.
+
 ## oMLX (Apache License 2.0)
 
 Engine: https://github.com/jundot/omlx – siehe dort für Lizenz und Hinweise.
