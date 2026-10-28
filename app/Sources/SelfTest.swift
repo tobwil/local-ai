@@ -20,6 +20,8 @@ enum SelfTest {
     }
 
     private static func check(_ name: String, _ body: () async throws -> String) async -> Bool {
+        // LOCALAI_TEST_ONLY=Teil des Namens: nur diese Prüfungen (die Engine-Prüfung läuft immer, sie liefert das Modell).
+        if let only = ProcessInfo.processInfo.environment["LOCALAI_TEST_ONLY"], !name.contains(only), name != "Engine erreichbar" { return true }
         do {
             let detail = try await body()
             print("✓ \(name): \(detail)")
@@ -261,6 +263,63 @@ enum SelfTest {
                 throw ToolError.invalid("Werkzeuge: \(summary.tools), Antwort: \(summary.answer.prefix(120))")
             }
             return "\(summary.tools.joined(separator: ", ")) → \(summary.answer.prefix(160))"
+        }) { failed += 1 }
+
+        if !model.isEmpty, !(await check("Chat: neu generieren, bearbeiten, stoppen") {
+            let session = await MainActor.run { AgentSession() }
+            let context = AgentContext(skills: [], agents: [], commands: [], customInstructions: "", maxSteps: 2, maxTokens: 300)
+            func waitIdle() async throws {
+                for _ in 0..<240 {
+                    if await MainActor.run(body: { !session.isRunning }) { return }
+                    try await Task.sleep(for: .milliseconds(250))
+                }
+                throw ToolError.invalid("Zeitüberschreitung")
+            }
+            func state() async -> (users: [String], answer: String, roles: [String], lastContent: String) {
+                await MainActor.run {
+                    var users: [String] = [], answer = ""
+                    for item in session.items {
+                        if case let .user(t, _) = item.kind { users.append(t) }
+                        if case let .assistant(t, _, _) = item.kind, !t.isEmpty { answer = t }
+                    }
+                    let h = session.debugHistory
+                    return (users, answer, h.map { $0["role"] as? String ?? "?" }, h.last?["content"] as? String ?? "")
+                }
+            }
+            await MainActor.run {
+                session.input = "Antworte nur mit dem Wort Apfel."
+                session.send(model: model, tools: [], context: context)
+            }
+            try await waitIdle()
+            let first = await state()
+            guard first.users.count == 1, !first.answer.isEmpty else { throw ToolError.invalid("erste Antwort fehlt: \(first)") }
+            await MainActor.run { session.regenerate(model: model, tools: [], context: context) }
+            try await waitIdle()
+            let regen = await state()
+            guard regen.users.count == 1, regen.roles == ["system", "user", "assistant"] else { throw ToolError.invalid("neu generieren: \(regen.users) \(regen.roles)") }
+            await MainActor.run { session.editLast("Antworte nur mit dem Wort Birne.", model: model, tools: [], context: context) }
+            try await waitIdle()
+            let edited = await state()
+            guard edited.users == ["Antworte nur mit dem Wort Birne."], edited.roles == ["system", "user", "assistant"],
+                  edited.answer.lowercased().contains("birne") else { throw ToolError.invalid("bearbeiten: \(edited.users) \(edited.roles) → \(edited.answer)") }
+            await MainActor.run {
+                session.input = "Schreibe eine ausführliche Geschichte über einen Leuchtturmwärter, mindestens 1500 Wörter."
+                session.send(model: model, tools: [], context: AgentContext(skills: [], agents: [], commands: [], customInstructions: "", maxSteps: 2, maxTokens: 2000))
+            }
+            for _ in 0..<120 {
+                if await MainActor.run(body: { session.items.last.map { if case let .assistant(t, _, _) = $0.kind { return t.count > 40 }; return false } ?? false }) { break }
+                try await Task.sleep(for: .milliseconds(250))
+            }
+            await MainActor.run { session.stop() }
+            try await waitIdle()
+            let stopped = await state()
+            guard stopped.roles.last == "assistant", stopped.lastContent.contains("gestoppt"), !stopped.answer.isEmpty else {
+                throw ToolError.invalid("stoppen: \(stopped.roles) \(stopped.lastContent.suffix(60))")
+            }
+            let id = await MainActor.run { ChatStore.saveAutomation(name: "Test-Automation", prompt: "Wetter?", result: "Sonnig.", failed: false, date: Date()) }
+            let entry = await MainActor.run { ChatStore.list().first { $0.id == id } }
+            guard entry?.automation == "Test-Automation", entry?.title.hasPrefix("Test-Automation · ") == true else { throw ToolError.invalid("Automations-Gespräch: \(String(describing: entry))") }
+            return "Antwort „\(first.answer.prefix(20))“ → neu „\(regen.answer.prefix(20))“ → bearbeitet „\(edited.answer.prefix(20))“ → gestoppt nach \(stopped.answer.count) Zeichen; Automations-Gespräch „\(entry!.title)“"
         }) { failed += 1 }
 
         if !(await check("Browser-Skripte (Syntax)") {

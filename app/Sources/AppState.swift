@@ -35,6 +35,8 @@ final class AppState {
     var requestedScreen: Screen?
     /// Kurzer Hinweis oben im Agent-Tab (verschwindet nach einigen Sekunden).
     var notice: String?
+    /// Einrichtung in drei Schritten (Engine, Modell, Berechtigungen) – beim ersten Start und über das Menü unten.
+    var showSetup = false
     var useWebTools = true
 
     init() {
@@ -63,6 +65,7 @@ final class AppState {
             return try await self.runAutomation(a)
         }
         automations.speak = { [weak self] text in self?.voice.speak(text) }
+        automations.onChatSaved = { [weak self] in self?.session.storeChanged() }
         voice.onUtterance = { [weak self] text in self?.talkSend(text) }
         voice.onSpeechFinished = { [weak self] in
             guard let self, self.talkPhase == .speaking else { return }
@@ -135,6 +138,12 @@ final class AppState {
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         func value(_ names: String...) -> String? { query.first { names.contains($0.name) }?.value }
         if value("engine") == "start" { Task { _ = await ensureEngine() } }
+        if value("einrichtung", "setup") == "1" { showSetup = true }
+        // kilokal://automationen?ausfuehren=Name – Automation sofort laufen lassen (z. B. aus Kurzbefehlen)
+        if screen == .automations, let name = value("ausfuehren", "run"),
+           let a = automations.automations.first(where: { $0.name.lowercased() == name.lowercased() }) {
+            Task { await automations.run(a) }
+        }
         if screen == .agent {
             if let name = value("projekt", "project") {
                 let p = session.projects.projects.first { $0.name.lowercased() == name.lowercased() }
@@ -474,14 +483,58 @@ final class AppState {
         return server.state.isUp
     }
 
+    /// Nachricht, die geschrieben wurde, während der Agent noch arbeitete – geht raus, sobald er fertig ist.
+    var queuedMessage: String?
+
     func send(adjust: @escaping (inout AgentContext) -> Void = { _ in }) {
+        if session.isRunning {
+            let text = session.input.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            queuedMessage = [queuedMessage, text].compactMap { $0 }.joined(separator: "\n\n")
+            session.input = ""
+            return
+        }
         if !canSend && server.engineInstalled {
             // Engine automatisch starten und danach abschicken (Eingabe bleibt bis dahin stehen).
             Task { if await ensureEngine() { send(adjust: adjust) } }
             return
         }
         if voice.isListening { voice.stopListening() }
-        let model = routedModel()
+        let (model, context) = runSetup(for: session.input, adjust: adjust)
+        session.send(model: model, tools: modeTools, context: context)
+    }
+
+    /// Vorgemerkte Nachricht abschicken (nach dem Ende eines Auftrags).
+    func sendQueued() {
+        guard let q = queuedMessage, !session.isRunning else { return }
+        queuedMessage = nil
+        session.input = q
+        send()
+    }
+
+    /// Letzte Antwort neu erzeugen.
+    func regenerate() {
+        guard session.canRewind else { return }
+        Task {
+            guard await ensureEngine() || selectedIsCloud else { return }
+            let (model, context) = runSetup(for: session.lastUserText)
+            session.regenerate(model: model, tools: modeTools, context: context)
+        }
+    }
+
+    /// Letzte eigene Nachricht ändern und neu beantworten lassen.
+    func editLast(_ text: String) {
+        guard session.canRewind else { return }
+        Task {
+            guard await ensureEngine() || selectedIsCloud else { return }
+            let (model, context) = runSetup(for: text)
+            session.editLast(text, model: model, tools: modeTools, context: context)
+        }
+    }
+
+    /// Modell und Einstellungen für einen Auftrag mit diesem Text.
+    private func runSetup(for input: String, adjust: (inout AgentContext) -> Void = { _ in }) -> (String, AgentContext) {
+        let model = routedModel(for: input)
         var context = agentContext
         context.spoken = talkMode
         // MTP "Automatisch": nur bei Code-Aufgaben spekulieren (Header X-oMLX-MTP).
@@ -490,7 +543,7 @@ final class AppState {
             case .chat: context.mtp = false
             case .code: context.mtp = true
             case .work:
-                context.mtp = ModelRouter.classify(session.input, hasImages: false, isCommand: session.input.hasPrefix("/")) == .code
+                context.mtp = ModelRouter.classify(input, hasImages: false, isCommand: input.hasPrefix("/")) == .code
             }
         }
         // Code-Projekte schreiben ganze Dateien in einer Antwort – dafür mehr Platz (der Kontext reicht auf 24 GB für ~29k).
@@ -499,7 +552,7 @@ final class AppState {
             context.maxSteps = max(context.maxSteps, settings.maxSteps * 2)   // Code braucht mehr Schritte (lesen, ändern, testen)
         }
         adjust(&context)
-        session.send(model: model, tools: modeTools, context: context)
+        return (model, context)
     }
 
     /// Gespräch, dessen Auftrag beim Beenden der App noch lief (nicht das gerade laufende).
@@ -518,10 +571,10 @@ final class AppState {
     }
 
     /// Ohne Router: das gewählte Modell. Mit Router: das Modell für das Thema der Nachricht, sofern installiert.
-    func routedModel() -> String {
+    func routedModel(for input: String) -> String {
         guard settings.routerEnabled else { lastRoute = nil; return selectedModelID }
-        var topic = ModelRouter.classify(session.input, hasImages: !session.attachments.isEmpty,
-                                         isCommand: session.input.hasPrefix("/"))
+        var topic = ModelRouter.classify(input, hasImages: !session.attachments.isEmpty,
+                                         isCommand: input.hasPrefix("/"))
         // Bilder im Verlauf verstehen nur Vision-Modelle – dann dabei bleiben.
         if session.hasImagesInHistory { topic = .vision }
         let wanted = settings.routes[topic.rawValue] ?? ""

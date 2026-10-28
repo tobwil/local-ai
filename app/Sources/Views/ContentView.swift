@@ -79,7 +79,16 @@ struct ContentView: View {
             }
             .navigationTitle(screen == .agent ? (app.session.items.isEmpty ? "Neues Gespräch" : app.session.title) : screen.title)
             .navigationSubtitle(screen == .agent ? app.session.project?.name ?? "" : "")
-            .onAppear { if !app.server.engineInstalled && !app.selectedIsCloud { screen = .overview } }
+            .onAppear {
+                if !app.server.engineInstalled && !app.selectedIsCloud { screen = .overview }
+                // Erster Start: Einrichtung in drei Schritten (Engine, Modell, Berechtigungen)
+                if !UserDefaults.standard.bool(forKey: "einrichtungFertig") && (!app.server.engineInstalled || app.installedModels.isEmpty) {
+                    app.showSetup = true
+                }
+            }
+            .sheet(isPresented: Binding(get: { app.showSetup }, set: { app.showSetup = $0 })) { SetupView() }
+            // Vorgemerkte Nachricht abschicken, sobald der Agent fertig ist
+            .onChange(of: app.session.isRunning) { _, running in if !running { app.sendQueued() } }
             .onChange(of: app.requestedScreen) { _, wanted in
                 if let wanted { screen = wanted; app.requestedScreen = nil }
             }

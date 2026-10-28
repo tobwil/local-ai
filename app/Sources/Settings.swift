@@ -103,6 +103,8 @@ enum ChatStore {
         var mode: WorkMode = .work
         var projectID: UUID?
         var angeheftet = false
+        /// Ergebnis einer Automation (deren Name) – eigener Ordner in der Seitenleiste.
+        var automation: String?
         /// Eigener oder vom Modell vorgeschlagener Kurztitel vorhanden (sonst Anfang der ersten Nachricht).
         var hasShortTitle = false
         /// Lief beim letzten Speichern noch ein Auftrag? (App beendet oder abgestürzt → Fortsetzen anbieten)
@@ -148,6 +150,7 @@ enum ChatStore {
                      mode: (json["mode"] as? String).flatMap(WorkMode.init(rawValue:)) ?? .work,
                      projectID: (json["project"] as? String).flatMap(UUID.init(uuidString:)),
                      angeheftet: json["angeheftet"] as? Bool ?? false,
+                     automation: json["automation"] as? String,
                      hasShortTitle: custom != nil || json["autoTitle"] != nil,
                      laeuft: json["laeuft"] as? Bool ?? false,
                      searchText: text.lowercased())
@@ -192,6 +195,21 @@ enum ChatStore {
         guard var json = load(id: id) else { return }
         json["laeuft"] = false
         save(id: id, json)
+    }
+
+    /// Ergebnis einer Automation als Gespräch speichern – so kann man im Chat direkt nachfragen.
+    @discardableResult
+    static func saveAutomation(name: String, prompt: String, result: String, failed: Bool, date: Date) -> String {
+        let id = UUID().uuidString
+        let shown = "⏰ \(name)\n\n\(prompt)"
+        let answer: [String: Any] = failed ? ["k": "error", "text": result] : ["k": "assistant", "text": result, "thinking": ""]
+        var history: [[String: Any]] = [["role": "system", "content": ""], ["role": "user", "content": prompt]]
+        if !failed { history.append(["role": "assistant", "content": result]) }
+        let when = date.formatted(Date.FormatStyle().day(.twoDigits).month(.twoDigits).hour().minute().locale(Locale(identifier: "de_DE")))
+        save(id: id, ["title": name, "customTitle": "", "autoTitle": "\(name) · \(when)", "automation": name, "angeheftet": false,
+                      "updated": date.timeIntervalSince1970, "mode": WorkMode.work.rawValue, "project": "", "plan": "", "laeuft": false,
+                      "items": [["k": "user", "text": shown, "images": [String]()], answer], "history": history])
+        return id
     }
 
     /// Titelvorschlag des Modells speichern (leer = Vorschlag misslungen, nicht erneut versuchen).

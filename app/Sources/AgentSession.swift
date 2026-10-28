@@ -228,6 +228,7 @@ final class AgentSession {
         userTask = ""
         customTitle = nil
         autoTitle = nil
+        automation = nil
         angeheftet = false
         preview.clear()
     }
@@ -275,11 +276,7 @@ final class AgentSession {
                 text = cmd.expand(parts.count > 1 ? parts[1] : "")
             }
         }
-        // Systemprompt bei jeder Nachricht aktualisieren (Werkzeuge, Skills oder Gesprächsmodus können sich ändern);
-        // bleibt er gleich, nutzt der Prompt-Cache weiter denselben Anfang.
-        systemBase = systemPrompt(tools: tools, context: context)
-        let system: [String: Any] = ["role": "system", "content": systemBase + Checkpoint.planSection(injectedPlan)]
-        if history.isEmpty { history.append(system) } else if history[0]["role"] as? String == "system" { history[0] = system }
+        refreshSystem(tools: tools, context: context)
         // Klingt die Nachricht nach einer Korrektur der letzten Antwort, an learn_lesson erinnern (sieht nur das Modell).
         let answeredBefore = items.contains { if case .assistant = $0.kind { return true }; return false }
         if answeredBefore, tools.contains(where: { $0.name == "learn_lesson" }), LessonStore.isCorrection(text) {
@@ -294,6 +291,21 @@ final class AgentSession {
             }
             history.append(["role": "user", "content": parts])
         }
+        run(model: model, tools: tools, context: context, task: shown)
+    }
+
+    /// Systemprompt bei jeder Nachricht aktualisieren (Werkzeuge, Skills oder Gesprächsmodus können sich ändern);
+    /// bleibt er gleich, nutzt der Prompt-Cache weiter denselben Anfang.
+    private func refreshSystem(tools: [AgentTool], context: AgentContext) {
+        systemBase = systemPrompt(tools: tools, context: context)
+        let system: [String: Any] = ["role": "system", "content": systemBase + Checkpoint.planSection(injectedPlan)]
+        if history.isEmpty { history.append(system) }
+        else if history[0]["role"] as? String == "system" { history[0] = system }
+        else { history.insert(system, at: 0) }
+    }
+
+    /// Auftrag ausführen – die Nachricht des Nutzers steht schon in Anzeige und Verlauf.
+    private func run(model: String, tools: [AgentTool], context: AgentContext, task shown: String) {
         changedFiles = []
         reviews = 0
         lastReviewFailed = false
@@ -352,6 +364,62 @@ final class AgentSession {
                 historyVersion += 1
             }
         }
+    }
+
+    // MARK: Neu generieren und bearbeiten
+
+    /// Position der letzten eigenen Nachricht in Anzeige und Verlauf (Hinweise der App an das Modell zählen nicht).
+    private var lastTurn: (item: Int, history: Int)? {
+        guard let i = items.lastIndex(where: { if case .user = $0.kind { return true }; return false }),
+              let h = history.lastIndex(where: { m in
+                  m["role"] as? String == "user" && !((m["content"] as? String)?.hasPrefix("(Hinweis der App") ?? false)
+              }) else { return nil }
+        return (i, h)
+    }
+
+    var canRewind: Bool { !isRunning && lastTurn != nil }
+
+    /// Verlauf für den Selbsttest.
+    var debugHistory: [[String: Any]] { history }
+
+    /// Text der letzten eigenen Nachricht (ohne die 📎-Zeilen der Anhänge).
+    var lastUserText: String {
+        guard let t = lastTurn, case let .user(text, _) = items[t.item].kind else { return "" }
+        return text.components(separatedBy: "\n").filter { !$0.hasPrefix("📎 ") }.joined(separator: "\n")
+    }
+
+    /// Letzte Antwort verwerfen und denselben Auftrag noch einmal ausführen.
+    func regenerate(model: String, tools: [AgentTool], context: AgentContext) {
+        guard !isRunning, let t = lastTurn, case let .user(shown, _) = items[t.item].kind else { return }
+        items.removeSubrange((t.item + 1)...)
+        history.removeSubrange((t.history + 1)...)
+        lastPromptTokens = 0
+        refreshSystem(tools: tools, context: context)
+        run(model: model, tools: tools, context: context, task: shown)
+    }
+
+    /// Letzte eigene Nachricht ändern: alles ab dort verwerfen und mit dem neuen Text weiterarbeiten.
+    /// Angehängte Bilder und Dateien der Nachricht bleiben erhalten.
+    func editLast(_ newText: String, model: String, tools: [AgentTool], context: AgentContext) {
+        let edited = newText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isRunning, !edited.isEmpty, let t = lastTurn, case let .user(shown, images) = items[t.item].kind else { return }
+        // Dateiinhalte stehen im Verlauf hinter dem Text („📎 Angehängt: …“) – die bleiben, nur der Text wird ersetzt.
+        func replaced(_ old: String) -> String { edited + (old.range(of: "\n\n📎 Angehängt:").map { String(old[$0.lowerBound...]) } ?? "") }
+        var content: Any = edited
+        if let old = history[t.history]["content"] as? String {
+            content = replaced(old)
+        } else if var parts = history[t.history]["content"] as? [[String: Any]] {
+            if let i = parts.firstIndex(where: { $0["type"] as? String == "text" }) { parts[i]["text"] = replaced(parts[i]["text"] as? String ?? "") }
+            content = parts
+        }
+        let newShown = ([edited] + shown.components(separatedBy: "\n").filter { $0.hasPrefix("📎 ") }).joined(separator: "\n")
+        items.removeSubrange(t.item...)
+        history.removeSubrange(t.history...)
+        lastPromptTokens = 0
+        refreshSystem(tools: tools, context: context)
+        items.append(Item(kind: .user(newShown, images: images)))
+        history.append(["role": "user", "content": content])
+        run(model: model, tools: tools, context: context, task: newShown)
     }
 
     /// Nach einem gelungenen Auftrag mit mehreren Werkzeugen: Gab es denselben Auftrag schon öfter?
@@ -543,7 +611,15 @@ final class AgentSession {
                     items.append(Item(kind: .error(Self.qualityPrefix + ": Verlauf war zu lang für den Speicher – ältere Schritte gekürzt, es geht weiter." + (memoryRetries == 2 ? " Tipp: „GPU-Speicher erhöhen“ in den Einstellungen gibt dem Modell deutlich mehr Platz." : ""))))
                     continue
                 }
-                if !Task.isCancelled, !quitting { items.append(Item(kind: .error(message))) }
+                if Task.isCancelled && !quitting {
+                    // Gestoppt: Die angefangene Antwort bleibt stehen und kommt in den Verlauf (für Rückfragen).
+                    if text.isEmpty { items.removeAll { $0.id == itemID } } else {
+                        setKind(itemID, .assistant(text: text, thinking: thought, stats: nil))
+                        history.append(["role": "assistant", "content": text + "\n\n(vom Nutzer gestoppt)"])
+                    }
+                    return
+                }
+                if !quitting { items.append(Item(kind: .error(message))) }
                 return
             }
 
@@ -560,6 +636,13 @@ final class AgentSession {
                 setKind(itemID, .assistant(text: text, thinking: thought, stats: stats))
             }
 
+            if Task.isCancelled && !quitting {
+                // Gestoppt, der Stream endete ohne Fehler: Teilantwort behalten, angefangene Werkzeug-Aufrufe verwerfen.
+                if text.isEmpty { items.removeAll { $0.id == itemID } } else {
+                    history.append(["role": "assistant", "content": text + "\n\n(vom Nutzer gestoppt)"])
+                }
+                return
+            }
             var assistant: [String: Any] = ["role": "assistant", "content": text]
             if !calls.isEmpty {
                 assistant["tool_calls"] = calls.map {
@@ -897,6 +980,8 @@ final class AgentSession {
 
     /// Vom Nutzer vergebener Titel (sonst: Anfang der ersten Nachricht).
     private(set) var customTitle: String?
+    /// Gespräch aus dem Ergebnis einer Automation (Name) – steht in der Seitenleiste unter „Automationen“.
+    private(set) var automation: String?
     /// Vom Modell vorgeschlagener Kurztitel ("" = Vorschlag misslungen).
     private(set) var autoTitle: String?
     /// Angeheftet: steht in der Gesprächsliste oben (z. B. das „Haupt-Gespräch“ eines Projekts).
@@ -948,6 +1033,7 @@ final class AgentSession {
                                    "mode": mode.rawValue, "project": project?.id.uuidString ?? "", "plan": plan, "laeuft": isRunning || quitting,
                                    "items": encoded, "history": history]
         if let autoTitle { json["autoTitle"] = autoTitle }
+        if let automation { json["automation"] = automation }
         ChatStore.save(id: chatID, json)
         historyVersion += 1
     }
@@ -958,6 +1044,7 @@ final class AgentSession {
         customTitle = (json["customTitle"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         angeheftet = json["angeheftet"] as? Bool ?? false
         autoTitle = json["autoTitle"] as? String
+        automation = json["automation"] as? String
         apply(project: projects.project(id: (json["project"] as? String).flatMap(UUID.init(uuidString:))))
         // Brach ein Lauf mitten im Schritt ab, fehlen Antworten auf Werkzeug-Aufrufe – die ergänzen, sonst lehnt die API ab.
         history = Checkpoint.repairToolCalls(json["history"] as? [[String: Any]] ?? [])
