@@ -51,6 +51,9 @@ enum LLMClient {
                         HomeNetwork.authorize(&req)
                         body["max_tokens"] = maxTokens
                         body["chat_template_kwargs"] = ["enable_thinking": thinking]
+                        // Ohne Denken die für Antworten empfohlene Einstellung (Qwen-Familie): Die Engine-Vorgabe 1,0 ist für den
+                        // Denk-Modus gedacht und lässt das 3-Bit-Modell gelegentlich ins Chinesische rutschen.
+                        if !thinking { body["temperature"] = 0.7; body["top_p"] = 0.8 }
                         if !mtp { req.setValue("off", forHTTPHeaderField: "X-oMLX-MTP") }
                     }
                     if !tools.isEmpty { body["tools"] = tools }
@@ -151,6 +154,16 @@ enum LLMClient {
             throw LLMError.http(status, String(data: data, encoding: .utf8) ?? "")
         }
         return msg["content"] as? String ?? ""
+    }
+
+    /// Modell in der lokalen Engine entladen (gibt dessen Arbeitsspeicher frei).
+    static func unload(model: String) async {
+        guard case .local = Endpoint.resolve(model).endpoint else { return }
+        var req = URLRequest(url: Paths.openAIBase.appendingPathComponent("models").appendingPathComponent(model).appendingPathComponent("unload"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 60
+        HomeNetwork.authorize(&req)
+        _ = try? await URLSession.shared.data(for: req)
     }
 
     static func models() async throws -> [String] {

@@ -227,6 +227,7 @@ final class AgentSession {
         repeatedChats = []
         userTask = ""
         customTitle = nil
+        autoTitle = nil
         angeheftet = false
         preview.clear()
     }
@@ -323,8 +324,32 @@ final class AgentSession {
             liveTokPerSec = 0
             save()
             if !Task.isCancelled, case let .assistant(text, _, _)? = items.last?.kind, !text.isEmpty {
+                nameChat(model: model)
                 noteRepetition()
                 onFinish?(text)
+            }
+        }
+    }
+
+    /// Nach der ersten Antwort einen Kurztitel vorschlagen lassen (läuft nach dem Auftrag, bremst ihn also nicht).
+    private func nameChat(model: String) {
+        guard customTitle == nil, autoTitle == nil else { return }
+        var user = "", answer = ""
+        for item in items {
+            if case let .user(t, _) = item.kind, user.isEmpty { user = t }
+            if case let .assistant(t, _, _) = item.kind, answer.isEmpty, !t.isEmpty { answer = t }
+        }
+        guard !user.isEmpty, !answer.isEmpty else { return }
+        let id = chatID
+        autoTitle = ""
+        Task {
+            let title = await ChatTitles.suggest(user: user, answer: answer, model: model) ?? ""
+            if id == chatID {
+                autoTitle = title
+                if !isRunning { save() }
+            } else {
+                ChatStore.setAutoTitle(id: id, title)
+                historyVersion += 1
             }
         }
     }
@@ -366,7 +391,8 @@ final class AgentSession {
     private func systemPrompt(tools: [AgentTool], context: AgentContext) -> String {
         var s = """
         Du bist ein hilfreicher, gründlicher Assistent, der lokal auf dem Mac des Nutzers läuft. \
-        Antworte in der Sprache des Nutzers – auch in Zwischenbemerkungen zwischen Werkzeug-Aufrufen. Heute ist \(Date().formatted(date: .complete, time: .omitted)).
+        Antworte in der Sprache des Nutzers – auch in Zwischenbemerkungen zwischen Werkzeug-Aufrufen – und nur in deren Schrift: \
+        keine chinesischen Schriftzeichen in deutschen oder englischen Antworten. Heute ist \(Date().formatted(date: .complete, time: .omitted)).
         \(context.selfDescription)
         """
         if mode == .chat {
@@ -378,6 +404,8 @@ final class AgentSession {
             Du arbeitest als Agent mit Werkzeugen. Arbeitsordner: \(workspace.path)
             - Plane kurz, nutze Werkzeuge gezielt und prüfe Ergebnisse, statt zu raten. Erfinde keine Dateiinhalte oder Fakten.
             - Für aktuelle Informationen: web_search, dann die besten Quellen mit fetch_url lesen und mit Links belegen.
+            - Erkennst du etwas nur halb (Film/Serie zu einer Adresse oder ID, ein Zitat, ein Produkt, eine Fehlermeldung), \
+            schlag es selbst mit web_search nach, bevor du nachfragst oder aufgibst – nicht denselben Bildschirm mehrmals ansehen.
             - Für Code: erst lesen (read_file, search_files, find_files), dann gezielt ändern (edit_file).
             - Anleitungen für Claude Code nennen Werkzeuge wie Read, Write, Edit, Bash, Grep, Glob, WebFetch, WebSearch, Task – \
             nutze dafür read_file, write_file, edit_file, run_shell, search_files, find_files, fetch_url, web_search, run_agent.
@@ -869,12 +897,15 @@ final class AgentSession {
 
     /// Vom Nutzer vergebener Titel (sonst: Anfang der ersten Nachricht).
     private(set) var customTitle: String?
+    /// Vom Modell vorgeschlagener Kurztitel ("" = Vorschlag misslungen).
+    private(set) var autoTitle: String?
     /// Angeheftet: steht in der Gesprächsliste oben (z. B. das „Haupt-Gespräch“ eines Projekts).
     private(set) var angeheftet = false
 
     var title: String {
         if let customTitle, !customTitle.isEmpty { return customTitle }
-        for item in items { if case let .user(t, _) = item.kind { return String(t.prefix(60)) } }
+        if let autoTitle, !autoTitle.isEmpty { return autoTitle }
+        for item in items { if case let .user(t, _) = item.kind { return ChatTitles.fallback(t) } }
         return "Neues Gespräch"
     }
 
@@ -913,9 +944,11 @@ final class AgentSession {
             case let .error(m): return ["k": "error", "text": m]
             }
         }
-        ChatStore.save(id: chatID, ["title": title, "customTitle": customTitle ?? "", "angeheftet": angeheftet, "updated": Date().timeIntervalSince1970, "mode": mode.rawValue,
-                                    "project": project?.id.uuidString ?? "", "plan": plan, "laeuft": isRunning || quitting,
-                                    "items": encoded, "history": history])
+        var json: [String: Any] = ["title": title, "customTitle": customTitle ?? "", "angeheftet": angeheftet, "updated": Date().timeIntervalSince1970,
+                                   "mode": mode.rawValue, "project": project?.id.uuidString ?? "", "plan": plan, "laeuft": isRunning || quitting,
+                                   "items": encoded, "history": history]
+        if let autoTitle { json["autoTitle"] = autoTitle }
+        ChatStore.save(id: chatID, json)
         historyVersion += 1
     }
 
@@ -924,6 +957,7 @@ final class AgentSession {
         chatID = id
         customTitle = (json["customTitle"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         angeheftet = json["angeheftet"] as? Bool ?? false
+        autoTitle = json["autoTitle"] as? String
         apply(project: projects.project(id: (json["project"] as? String).flatMap(UUID.init(uuidString:))))
         // Brach ein Lauf mitten im Schritt ab, fehlen Antworten auf Werkzeug-Aufrufe – die ergänzen, sonst lehnt die API ab.
         history = Checkpoint.repairToolCalls(json["history"] as? [[String: Any]] ?? [])
