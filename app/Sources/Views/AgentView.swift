@@ -224,6 +224,8 @@ private struct ItemView: View {
     let item: AgentSession.Item
     /// Aktionen und Tempo erst beim Überfahren der Antwort zeigen.
     @State private var hovering = false
+    /// Tempo-Angaben (tok/s, Tokens, erstes Wort) dauerhaft zeigen – für alle, die es genau wissen wollen.
+    @AppStorage("tempoZeigen") private var showTempo = false
     @State private var copied = false
     @State private var editing = false
     @State private var draft = ""
@@ -317,8 +319,11 @@ private struct ItemView: View {
                                 .help("Neu generieren – die Antwort verwerfen und noch einmal antworten lassen")
                         }
                         if let stats {
-                            Text("\(stats.tokPerSec.oneDecimal) tok/s · \(stats.tokens) Tokens · erstes Token nach \(String(format: "%.1f", stats.ttft)) s\(stats.model.isEmpty ? "" : " · " + CloudModels.displayName(stats.model))")
+                            // Technik nur auf Wunsch: beim Überfahren der Antwort oder mit „Tempo-Angaben zeigen“.
+                            Text("\(stats.tokPerSec.oneDecimal) tok/s · \(stats.tokens) Tokens · erstes Wort nach \(String(format: "%.1f", stats.ttft)) s\(stats.model.isEmpty ? "" : " · " + CloudModels.displayName(stats.model))")
                                 .font(.caption2).foregroundStyle(.tertiary)
+                                .opacity(hovering || showTempo ? 1 : 0)
+                                .animation(.easeOut(duration: 0.15), value: hovering)
                         }
                     }
                     .buttonStyle(.borderless).foregroundStyle(.secondary).font(.callout)
@@ -802,12 +807,12 @@ private struct NutzerText: View {
                 .textSelection(.enabled)
             if lang {
                 Button(offen ? "Weniger anzeigen" : "Ganzen Auftrag anzeigen (\(text.count) Zeichen)") { withAnimation(.snappy) { offen.toggle() } }
-                    .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.85))
+                    .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(Theme.primary)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .foregroundStyle(.white)
-        .background(Theme.brand, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .foregroundStyle(.primary)
+        .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 

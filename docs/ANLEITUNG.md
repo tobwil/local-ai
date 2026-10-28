@@ -74,7 +74,8 @@ Ein neues Gespräch fragt *„Wobei kann ich helfen?“* – das Eingabefeld ste
 ![Agent](bilder/agent-allgemein.png)
 
 **Antworten** erscheinen mit Überschriften, Listen und Tabellen. Darunter: **Kopieren**, **Vorlesen** und bei der
-letzten Antwort **Neu generieren**, dazu Tempo (tok/s) und Tokens. An deiner letzten Nachricht erscheint beim
+letzten Antwort **Neu generieren**; Tempo (tok/s) und Tokens erscheinen beim Überfahren der Antwort (oder immer, mit
+*Einstellungen → Agent → Tempo-Angaben zeigen*). An deiner letzten Nachricht erscheint beim
 Überfahren ein **Stift**: Text ändern, ⌘↩ – alles danach wird neu beantwortet, Anhänge bleiben.
 
 **Arbeitsschritte:** Was der Agent unterwegs tut (Dateien lesen, Befehle, Websuche …), steht kompakt in einer Zeile –
@@ -132,7 +133,8 @@ Alles Wichtige steht in **einer Seitenleiste** – wie bei ChatGPT:
 
 - oben **Neues Gespräch** und **Suche** über alle Gespräche (Titel und Inhalt),
 - darunter **Assistenten**, **Wissen** und **Automationen**,
-- **Projekte** als aufklappbare Ordner mit ihren Gesprächen (aufgeklappt oben *＋ Neues Gespräch* im Projekt),
+- **Projekte** als aufklappbare Ordner mit ihren neuesten Gesprächen – aufgeklappt ist nur das aktuelle Projekt, das
+  kleine **＋** am offenen Ordner beginnt ein neues Gespräch darin,
 - der Ordner **Automationen** mit jedem Ergebnis einer Automation als Gespräch (mit „neu“-Zähler) – dort direkt nachfragen,
 - alle übrigen **Gespräche**,
 - ganz unten das **Menü** mit Modell und Engine-Zustand: Übersicht, Modelle, Skills & Plugins, Werkzeuge & MCP,

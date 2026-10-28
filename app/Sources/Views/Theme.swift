@@ -16,7 +16,14 @@ enum Theme {
     })
     static let sky = skyBlue
     static let teal = Color(red: 0.12, green: 0.70, blue: 0.62)
-    /// Flächen (Buttons, Nutzer-Blasen): immer Dunkelblau → Hellblau, weiße Schrift.
+    /// Eigene Nachrichten: ruhiges Blaugrau aus der Hausfarbe (wie die hellgrauen Blasen bei ChatGPT), damit der Blick
+    /// auf den Antworten liegt. Hell: #E8EDF5, dunkel: #2B3546 – Schrift in der normalen Textfarbe.
+    static let userBubble = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x2B / 255, green: 0x35 / 255, blue: 0x46 / 255, alpha: 1)
+            : NSColor(srgbRed: 0xE8 / 255, green: 0xED / 255, blue: 0xF5 / 255, alpha: 1)
+    })
+    /// Flächen (Buttons, Akzente): immer Dunkelblau → Hellblau, weiße Schrift.
     static let brand = LinearGradient(colors: [navy, skyBlue], startPoint: .topLeading, endPoint: .bottomTrailing)
     static let glow = LinearGradient(colors: [skyBlue.opacity(0.30), gold.opacity(0.10), .clear],
                                      startPoint: .topLeading, endPoint: .bottomTrailing)

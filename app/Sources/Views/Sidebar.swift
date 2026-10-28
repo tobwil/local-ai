@@ -18,8 +18,10 @@ struct AppSidebar: View {
     @AppStorage("offeneProjekte") private var openRaw = ""
 
     static let navigation: [Screen] = [.assistants, .knowledge, .automations]
-    private static let preview = 5
+    private static let preview = 3
     private static let previewLoose = 20
+    /// Einrückung der Gespräche unter einem Ordner (knapp, damit Titel nicht so früh abgeschnitten werden).
+    private static let indent: CGFloat = 16
 
     var body: some View {
         let session = app.session
@@ -48,8 +50,9 @@ struct AppSidebar: View {
             }
             .background(.bar)
         }
-        .onAppear { if let id = session.project?.id { setOpen(id, true) } }
-        .onChange(of: session.project?.id) { _, id in if let id { setOpen(id, true) } }
+        // Nur das aktuelle Projekt aufgeklappt (andere lassen sich per Klick öffnen) – sonst wird die Leiste schnell voll.
+        .onAppear { openOnly(session.project?.id) }
+        .onChange(of: session.project?.id) { _, id in openOnly(id) }
         .task(id: app.server.state.isUp) { if app.server.state.isUp { ChatTitles.backfill(app) } }
         .alert("Gespräch umbenennen", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Titel", text: $newTitle)
@@ -139,6 +142,13 @@ struct AppSidebar: View {
             Image(systemName: isOpen ? "folder.fill" : "folder").foregroundStyle(Theme.gold).frame(width: 18)
             Text(p.name).lineLimit(1).fontWeight(current ? .semibold : .regular)
             Spacer(minLength: 4)
+            // Neues Gespräch im Projekt: kleines ＋ am offenen Ordner statt einer eigenen Zeile.
+            if isOpen {
+                Button { newChat(in: p) } label: { Image(systemName: "plus").font(.caption.weight(.semibold)) }
+                    .buttonStyle(.borderless).foregroundStyle(.secondary)
+                    .disabled(session.isRunning)
+                    .help("Neues Gespräch in „\(p.name)“")
+            }
             Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
                 .rotationEffect(.degrees(isOpen ? 90 : 0))
         }
@@ -151,12 +161,9 @@ struct AppSidebar: View {
             if let url = p.folderURL { Button("Ordner im Finder öffnen") { NSWorkspace.shared.open(url) } }
         }
         if isOpen {
-            Button { newChat(in: p) } label: {
-                Label("Neues Gespräch", systemImage: "plus").font(.callout).foregroundStyle(.secondary)
-                    .padding(.leading, 24).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            if entries.isEmpty {
+                Text("Noch keine Gespräche – ＋ startet eins.").font(.caption).foregroundStyle(.tertiary).padding(.leading, Self.indent)
             }
-            .buttonStyle(.plain)
-            .disabled(session.isRunning)
             let all = allShown.contains(p.id)
             ForEach(all ? entries : Array(entries.prefix(Self.preview))) { row($0, indent: true) }
             if entries.count > Self.preview { moreButton(p.id, total: entries.count, all: all, indent: true) }
@@ -202,7 +209,7 @@ struct AppSidebar: View {
             if all { allShown.remove(id) } else { allShown.insert(id) }
         }
         .buttonStyle(.borderless).font(.caption)
-        .padding(.leading, indent ? 24 : 0)
+        .padding(.leading, indent ? Self.indent : 0)
     }
 
     private func newChat(in p: Project?) {
@@ -236,7 +243,7 @@ struct AppSidebar: View {
                     Label(project.name, systemImage: "folder").font(.caption2).foregroundStyle(.tertiary)
                 }
             }
-            .padding(.leading, indent ? 24 : 0)
+            .padding(.leading, indent ? Self.indent : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -256,6 +263,11 @@ struct AppSidebar: View {
     }
 
     private var open: Set<String> { Set(openRaw.split(separator: ",").map(String.init)) }
+
+    /// Nur dieses Projekt aufklappen; der Ordner „Automationen“ behält seinen Zustand.
+    private func openOnly(_ id: UUID?) {
+        openRaw = ([id?.uuidString].compactMap { $0 } + open.filter { $0 == "automationen" }).sorted().joined(separator: ",")
+    }
 
     private func setOpen(_ id: UUID, _ on: Bool) {
         var s = open

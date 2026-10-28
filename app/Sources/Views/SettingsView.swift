@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppState.self) private var app
+    @AppStorage("tempoZeigen") private var showTempo = false
     @State private var testResult: String?
     @State private var testing = false
     @State private var cloudNote: String?
@@ -166,6 +167,9 @@ struct SettingsView: View {
                     Label("Shell in der Sandbox", systemImage: "shield.lefthalf.filled")
                 }
                 Text("In der Sandbox darf ein Shell-Befehl nur im Arbeitsordner, in /tmp und in Cache-Ordnern schreiben; ~/.ssh, ~/.aws, der Schlüsselbund und andere Zugangsdaten sind gesperrt, Shell-Startdateien und ~/.kilokal geschützt. Befehle, die du einzeln freigibst, laufen im Standard ohne Sandbox. API-Schlüssel und private Schlüssel in Werkzeug-Ergebnissen blendet die App immer aus.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Tempo-Angaben unter jeder Antwort zeigen (tok/s, Tokens, Zeit bis zum ersten Wort)", isOn: $showTempo)
+                Text("Sonst erscheinen sie nur, wenn du mit der Maus über eine Antwort fährst.")
                     .font(.caption).foregroundStyle(.secondary)
                 Stepper("Höchstens \(settings.maxSteps) Schritte pro Aufgabe", value: $settings.maxSteps, in: 4...100, step: 4)
                 Stepper(settings.autoContinue == 0 ? "Am Schrittlimit immer pausieren" : "Am Schrittlimit bis zu \(settings.autoContinue)× von selbst weitermachen",

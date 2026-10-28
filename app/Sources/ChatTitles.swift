@@ -13,7 +13,11 @@ enum ChatTitles {
         if let r = t.range(of: #"[.!?:](\s|$)"#, options: .regularExpression), t.distance(from: t.startIndex, to: r.lowerBound) >= 12 {
             t = String(t[..<r.lowerBound])
         }
-        return t.count > 60 ? String(t.prefix(57)).trimmingCharacters(in: .whitespaces) + " …" : t
+        // Kurz genug für die Seitenleiste; an einer Wortgrenze kürzen statt mitten im Wort.
+        guard t.count > 40 else { return t }
+        let cut = String(t.prefix(40))
+        let words = cut.split(separator: " ").dropLast()
+        return (words.count >= 2 ? words.joined(separator: " ") : cut).trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)) + " …"
     }
 
     /// Titelvorschlag des Modells (2–5 Wörter) oder nil, wenn nichts Brauchbares kommt.
