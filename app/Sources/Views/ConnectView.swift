@@ -121,7 +121,8 @@ private struct ConnectCard: View {
 
 struct LogView: View {
     @Environment(AppState.self) private var app
-    @State private var source = 0
+    /// Zuerst die Aktionen des Agenten – das Engine-Protokoll ist für die Fehlersuche.
+    @State private var source = 2
     @State private var actions: [ActionLog.Entry] = []
 
     var body: some View {
@@ -140,6 +141,12 @@ struct LogView: View {
                 }
             }
             .padding(12)
+            if source == 0 {
+                Text("Gelbe Zeilen (WARNING) sind Hinweise der Engine, keine Fehler. „Prefill above max_bytes“ heißt: Das Modell liest gerade einen langen Text nahe der Speichergrenze und tut das in kleinen Stücken – langsamer, aber sicher. Gleiche Meldungen hintereinander stehen als eine Zeile mit (×Anzahl).")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.bottom, 8)
+            }
             if source == 2 {
                 if actions.isEmpty {
                     ContentUnavailableView("Noch keine Aktionen", systemImage: "list.bullet.clipboard",
@@ -184,6 +191,5 @@ struct LogView: View {
                 }
             }
         }
-        .onAppear { if source == 0 && app.server.log.isEmpty { source = 2 } }
     }
 }

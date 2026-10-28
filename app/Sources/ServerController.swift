@@ -149,9 +149,29 @@ final class ServerController {
         state = (status == 0 || status == 15) ? .stopped : .failed("oMLX ist abgestürzt (Status \(status))")
     }
 
+    @ObservationIgnored private var lastLogKey = ""
+    @ObservationIgnored private var logRepeats = 0
+
+    /// Gleichartige Zeilen hintereinander fasst das Protokoll zu einer zusammen: Die Engine meldet z. B. beim Einlesen
+    /// nahe der Speichergrenze alle 32 Tokens „Prefill above max_bytes at … tokens“ – hunderte Male pro Auftrag.
     private func appendLog(_ text: String) {
-        log.append(contentsOf: text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init))
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init) {
+            let key = Self.logKey(line)
+            if key == lastLogKey, !log.isEmpty {
+                logRepeats += 1
+                log[log.count - 1] = line + "   (×\(logRepeats))"
+            } else {
+                lastLogKey = key
+                logRepeats = 1
+                log.append(line)
+            }
+        }
         if log.count > maxLogLines { log.removeFirst(log.count - maxLogLines) }
+    }
+
+    /// Zeile ohne Zeitstempel und Zahlen – gleich bei Meldungen, die sich nur in Werten unterscheiden.
+    nonisolated static func logKey(_ line: String) -> String {
+        line.replacingOccurrences(of: #"[0-9]+([.,:][0-9]+)*"#, with: "#", options: .regularExpression)
     }
 
     private func fetchModels() async -> [String]? {
