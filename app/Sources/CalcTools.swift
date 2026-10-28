@@ -61,7 +61,14 @@ extension BuiltinTools {
 enum ArithmeticCheck {
     struct Error { let text: String; let correct: String }
 
-    static func firstError(in answer: String) -> Error? {
+    static func firstError(in raw: String) -> Error? {
+        // LaTeX-Schreibweise in normale Rechnung übersetzen: \frac{3}{5} \times 28 = 20,4 → 3/5 × 28 = 20,4
+        var answer = raw
+        answer = answer.replacingOccurrences(of: #"\\[dt]?frac\{([^{}]+)\}\{([^{}]+)\}"#, with: "$1/$2", options: .regularExpression)
+        for (latex, plain) in [("\\times", "×"), ("\\cdot", "·"), ("\\div", "÷"), ("\\,", ""), ("\\text{", "{"), ("$$", " "), ("$", " ")] {
+            answer = answer.replacingOccurrences(of: latex, with: plain)
+        }
+        answer = answer.replacingOccurrences(of: #"\{([^{}]*)\}"#, with: "$1", options: .regularExpression)
         // Zahl (deutsch) – mindestens ein Operator – Zahl … = Zahl
         let num = #"\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?"#
         let op = #"\s*[+\-−×x*·/÷]\s*"#

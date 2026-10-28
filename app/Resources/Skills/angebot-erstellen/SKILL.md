@@ -8,8 +8,9 @@ description: Aus einer Kundenanfrage (Mail, Text, PDF) und einer Preisliste ein 
 Wenige Schritte, jede Datei einmal. Nichts im Web nachschlagen.
 
 1. Anfrage und Preisliste je einmal mit `read_file` lesen. Nur Preise aus der Preisliste verwenden.
-2. Positionen festlegen: Menge × Einzelpreis; Zuschläge (z. B. zusätzliche Teilnehmende); Anfahrt – steht
-   „Hin- und Rückfahrt“, dann Kilometer × 2; Rabatte nur auf die Positionen, für die sie gelten.
+2. Positionen festlegen – **jede gewünschte Leistung kommt ins Angebot, nie etwas weglassen, um ins Budget zu passen**:
+   Menge × Einzelpreis; Zuschläge – z. B. 8 Teilnehmende bei „bis 6 inklusive“ → 8 − 6 = 2 zusätzliche Teilnehmende;
+   Anfahrt – steht „Hin- und Rückfahrt“, dann Kilometer × 2; Rabatte nur so, wie die Preisliste sie beschreibt.
 3. **Nicht selbst rechnen:** **ein** `create_document` als `Angebot_<Kunde>.docx` mit Empfänger, Datum, Betreff, drei Sätzen
    Anschreiben zur Anfrage und der Positionstabelle | Pos. | Leistung | Menge | Einzelpreis | Gesamt | – **ohne** Summenzeilen,
    dazu `totals`: `{"line": ["Menge", "Einzelpreis", "Gesamt"], "sum": ["Gesamt"], "discount_percent": 5, "vat_percent": 19}`

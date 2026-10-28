@@ -200,8 +200,9 @@ enum SelfTest {
             let a = ArithmeticCheck.firstError(in: "Also 28 × 3/5 = 18 Tage.")
             let b = ArithmeticCheck.firstError(in: "28 × 3/5 = 16,8 Tage, also rund 17. Dazu 1.490 + 180 = 1.670 €.")
             let c = ArithmeticCheck.firstError(in: "Termin 10:30, Raum 3-5, am 01.01.2027.")
-            guard a?.correct == "16,8", b == nil, c == nil else {
-                throw ToolError.invalid("Rechen-Check: \(String(describing: a)) · \(String(describing: b)) · \(String(describing: c))")
+            let d = ArithmeticCheck.firstError(in: "$$\\frac{3}{5} \\times 28 = 20,4 \\text{ Arbeitstage}$$")
+            guard a?.correct == "16,8", b == nil, c == nil, d?.correct == "16,8" else {
+                throw ToolError.invalid("Rechen-Check: \(String(describing: a)) · \(String(describing: b)) · \(String(describing: c)) · \(String(describing: d))")
             }
             guard calc.contains("= 145.560"), calc.contains("= 16,8"), date.contains("→ 31.12.2030 (Dienstag)") else {
                 throw ToolError.invalid("Rechenwerkzeuge: \(calc) · \(date)")

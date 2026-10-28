@@ -13,5 +13,6 @@ Strukturierte Lesehilfe, **keine Rechtsberatung** – das steht in einem Satz am
 3. **Antwort als Checkliste im Chat** (nur auf Wunsch zusätzlich `create_document` als PDF):
    - **Eckdaten:** Parteien, Gegenstand, Beginn, Laufzeit, Verlängerung – mit §
    - **Fristen mit Datum** (z. B. „Widerspruch gegen Verlängerung bis 31.12.2030“)
-   - **Kosten:** monatlich, über die Laufzeit, zusätzlich mögliche Kosten (mit Obergrenze, falls genannt)
+   - **Kosten:** monatlich (alle laufenden Posten zusammen) **und** die Summe über die gesamte feste Laufzeit
+     (Monatsbetrag × Monate mit `calculate`, z. B. 5 Jahre = 60 Monate), Kaution, zusätzlich mögliche Kosten (mit Obergrenze)
    - **Auffällige Klauseln:** je § ein Satz, was sie bedeutet, und eine Frage für die Verhandlung

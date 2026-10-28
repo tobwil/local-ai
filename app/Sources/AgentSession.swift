@@ -654,8 +654,10 @@ final class AgentSession {
             } catch {
                 // Zu lange Eingabe für den Speicher? Stärker verdichten und den Schritt wiederholen.
                 let message = error.localizedDescription
-                // Modell wird gerade neu geladen (z. B. von einer parallelen Automation): kurz warten, gleicher Schritt nochmal
-                if local, memoryRetries < 3, message.contains("is being unloaded") || message.contains("is being loaded") {
+                // Modell wird gerade neu geladen (z. B. von einer parallelen Automation) oder hat einen kaputten Werkzeugaufruf
+                // erzeugt: kurz warten und denselben Schritt noch einmal
+                if local, memoryRetries < 3, message.contains("is being unloaded") || message.contains("is being loaded")
+                    || message.contains("unrecoverable tool call") {
                     memoryRetries += 1
                     items.removeAll { $0.id == itemID }
                     try? await Task.sleep(for: .seconds(8))

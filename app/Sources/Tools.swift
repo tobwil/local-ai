@@ -45,7 +45,7 @@ enum BuiltinTools {
                       description: "Listet Dateien und Ordner eines Verzeichnisses. Pfade relativ zum Arbeitsordner.",
                       parameters: schema([("path", "string", "Verzeichnis, Standard: Arbeitsordner")], required: []),
                       needsApproval: false, source: "Eingebaut") { args in
-                let url = resolve(args["path"] as? String ?? ".", in: workspace())
+                let url = locate(resolve(args["path"] as? String ?? ".", in: workspace()), in: workspace())
                 let items = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey])
                 return items.sorted { $0.lastPathComponent < $1.lastPathComponent }.prefix(400).map { u in
                     let v = try? u.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
@@ -58,7 +58,7 @@ enum BuiltinTools {
                                           ("start_line", "integer", "Erste Zeile (ab 1)"),
                                           ("end_line", "integer", "Letzte Zeile")], required: ["path"]),
                       needsApproval: false, source: "Eingebaut") { args in
-                let url = resolve(try string(args, "path"), in: workspace())
+                let url = locate(resolve(try string(args, "path"), in: workspace()), in: workspace())
                 let text: String
                 let ext = url.pathExtension.lowercased()
                 if ext == "pdf" {
@@ -212,6 +212,24 @@ enum BuiltinTools {
                                          links: args["include_links"] as? Bool ?? false)
             },
         ]
+    }
+
+    /// Pfad nicht gefunden, aber genau eine Datei bzw. ein Ordner dieses Namens im Arbeitsordner? Dann den nehmen –
+    /// kleine Modelle erfinden gern Unterordner („Angebot_und_Auftraege/anfrage.txt“).
+    static func locate(_ url: URL, in workspace: URL) -> URL {
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: url.path), url.path.hasPrefix(workspace.path) || !url.path.hasPrefix("/") else { return url }
+        let name = url.lastPathComponent
+        // Ganz falscher Pfad mit Arbeitsordner-Namen davor („projekt/anfrage.txt“ statt „anfrage.txt“)
+        let direct = workspace.appendingPathComponent(name)
+        if fm.fileExists(atPath: direct.path) { return direct }
+        guard let e = fm.enumerator(at: workspace, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return url }
+        var hits: [URL] = []
+        while let u = e.nextObject() as? URL {
+            if e.level > 4 { e.skipDescendants(); continue }
+            if u.lastPathComponent == name { hits.append(u); if hits.count > 1 { return url } }
+        }
+        return hits.first ?? url
     }
 
     /// Word, Excel, PDF & Co. sind keine Textdateien – Änderungen gehen dort nur über ein neues Dokument.
