@@ -85,6 +85,22 @@ enum OfficeFiles {
     // MARK: Excel schreiben
 
     /// Markdown-Tabellen → .xlsx (eine Tabelle je Blatt; Zahlen werden als Zahlen gespeichert).
+    /// Zahl in einer Tabellenzelle: 1.234,56 · 1234,56 · 1234.56 · 186,33 € · -5 – und ob es ein Euro-Betrag ist.
+    /// Datumsangaben (18.09.2026), Uhrzeiten und Nummern mit Buchstaben bleiben Text.
+    static func cellNumber(_ raw: String) -> (Double, Bool)? {
+        var s = raw.trimmingCharacters(in: .whitespaces)
+        let euro = s.contains("€") || s.hasSuffix("EUR")
+        s = s.replacingOccurrences(of: "€", with: "").replacingOccurrences(of: "EUR", with: "")
+            .replacingOccurrences(of: "\u{00A0}", with: "").trimmingCharacters(in: .whitespaces)
+        guard !s.isEmpty else { return nil }
+        if s.range(of: #"^-?\d{1,3}(\.\d{3})+(,\d+)?$"#, options: .regularExpression) != nil
+            || s.range(of: #"^-?\d+,\d+$"#, options: .regularExpression) != nil {
+            return Double(s.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")).map { ($0, euro) }
+        }
+        if s.range(of: #"^-?\d+(\.\d+)?$"#, options: .regularExpression) != nil { return Double(s).map { ($0, euro) } }
+        return nil
+    }
+
     static func writeXLSX(markdown: String, to url: URL) throws {
         var tables: [[[String]]] = []
         var current: [[String]] = []
@@ -138,29 +154,46 @@ enum OfficeFiles {
         <Relationship Id="rId\(sheets.count + 1)" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>\
         </Relationships>
         """)
-        // Stil 1 = fette Kopfzeile
+        // Stil 1 = fette Kopfzeile, 2 = Euro-Betrag, 3 = Euro-Betrag fett (Summenzeilen)
         try write("xl/styles.xml", head + """
         <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\
+        <numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00\\ &quot;€&quot;"/></numFmts>\
         <fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>\
         <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>\
         <borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs>\
-        <cellXfs count="2"><xf fontId="0"/><xf fontId="1" applyFont="1"/></cellXfs></styleSheet>
+        <cellXfs count="4"><xf fontId="0"/><xf fontId="1" applyFont="1"/><xf fontId="0" numFmtId="164" applyNumberFormat="1"/>\
+        <xf fontId="1" numFmtId="164" applyFont="1" applyNumberFormat="1"/></cellXfs></styleSheet>
         """)
         for (t, rows) in tables.enumerated() {
+            // Zahlenwert einer Zelle (Zeile ab 1, wie in Excel) – Formeln rekursiv ausgerechnet
+            func number(_ r: Int, _ c: Int, depth: Int = 0) -> Double? {
+                guard r >= 2, r - 1 < rows.count, c < rows[r - 1].count, depth < 20 else { return nil }
+                let v = rows[r - 1][c].replacingOccurrences(of: "**", with: "")
+                if v.hasPrefix("=") { return Self.evaluate(String(v.dropFirst())) { number($0, $1, depth: depth + 1) } }
+                return Self.cellNumber(v)?.0
+            }
             var xml = head + "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>"
             for (r, row) in rows.enumerated() {
                 xml += "<row r=\"\(r + 1)\">"
                 for (c, raw) in row.enumerated() {
                     let ref = column(c) + String(r + 1)
-                    let style = r == 0 ? " s=\"1\"" : ""
+                    let bold = raw.contains("**")
                     let value = raw.replacingOccurrences(of: "**", with: "")
-                    let number = r > 0 ? Double(value.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: "."))
-                        ?? Double(value) : nil
-                    if let number, !value.isEmpty {
+                    if r > 0, value.hasPrefix("="), value.count > 1 {
+                        // Formel (englische Namen wie in der Datei: =SUM(E2:E7)) – Excel rechnet selbst, kein Kopfrechnen des Modells
+                        let cached = number(r + 1, c).map { "<v>\($0)</v>" } ?? ""
+                        // Excel erwartet Dezimalpunkt und englische Namen in der Datei (=E7*0,05 → E7*0.05, SUMME → SUM)
+                        let formula = String(value.dropFirst()).replacingOccurrences(of: #"(\d),(\d)"#, with: "$1.$2", options: .regularExpression)
+                            .replacingOccurrences(of: "SUMME(", with: "SUM(").replacingOccurrences(of: "MITTELWERT(", with: "AVERAGE(")
+                        xml += "<c r=\"\(ref)\" s=\"\(bold ? 3 : 2)\"><f>\(MarkdownHTML.escape(formula))</f>\(cached)</c>"
+                    } else if r > 0, let (number, euro) = Self.cellNumber(value) {
                         let v = number == number.rounded() && abs(number) < 1e15 ? String(Int(number)) : String(number)
+                        let style = euro ? " s=\"\(bold ? 3 : 2)\"" : bold ? " s=\"1\"" : ""
                         xml += "<c r=\"\(ref)\"\(style)><v>\(v)</v></c>"
+                    } else if r == 0 || bold {
+                        xml += "<c r=\"\(ref)\" t=\"inlineStr\" s=\"1\"><is><t>\(MarkdownHTML.escape(value))</t></is></c>"
                     } else {
-                        xml += "<c r=\"\(ref)\" t=\"inlineStr\"\(style)><is><t>\(MarkdownHTML.escape(value))</t></is></c>"
+                        xml += "<c r=\"\(ref)\" t=\"inlineStr\"><is><t>\(MarkdownHTML.escape(value))</t></is></c>"
                     }
                 }
                 xml += "</row>"
@@ -217,8 +250,8 @@ private final class SheetRows: NSObject, XMLParserDelegate {
     private let shared: [String]
     private var rows: [[String]] = []
     private var row: [String] = []
-    private var cellType = "", cellRef = "", value = ""
-    private var inValue = false
+    private var cellType = "", cellRef = "", value = "", formula = ""
+    private var inValue = false, inFormula = false
 
     init(shared: [String]) { self.shared = shared }
 
@@ -234,23 +267,29 @@ private final class SheetRows: NSObject, XMLParserDelegate {
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
         switch name {
         case "row": row = []
-        case "c": cellType = attributes["t"] ?? ""; cellRef = attributes["r"] ?? ""; value = ""
+        case "c": cellType = attributes["t"] ?? ""; cellRef = attributes["r"] ?? ""; value = ""; formula = ""
         case "v", "t": inValue = true
+        case "f": inFormula = true
         default: break
         }
     }
 
-    func parser(_ parser: XMLParser, foundCharacters string: String) { if inValue { value += string } }
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        if inValue { value += string } else if inFormula { formula += string }
+    }
 
     func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
         switch name {
         case "v", "t": inValue = false
+        case "f": inFormula = false
         case "c":
             // Lücken (leere Zellen) über die Spaltenbuchstaben auffüllen.
             let letters = cellRef.prefix { $0.isLetter }
             let col = letters.reduce(0) { $0 * 26 + Int($1.asciiValue! - 64) } - 1
             while row.count < col { row.append("") }
-            row.append(cellType == "s" ? (Int(value).flatMap { $0 < shared.count ? shared[$0] : nil } ?? value) : value)
+            let shown = cellType == "s" ? (Int(value).flatMap { $0 < shared.count ? shared[$0] : nil } ?? value) : value
+            // Formeln sichtbar machen (sonst sieht das Modell leere Summenzeilen und hält sie für Platzhalter)
+            row.append(formula.isEmpty ? shown : "=\(formula)" + (shown.isEmpty ? "" : " → \(shown)"))
         case "row": rows.append(row)
         default: break
         }

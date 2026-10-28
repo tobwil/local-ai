@@ -60,7 +60,8 @@ enum WorkMode: String, CaseIterable, Identifiable {
     }
 
     private static let chatTools: Set<String> = ["web_search", "fetch_url", "search_documents", "remember", "forget", "learn_lesson",
-                                                 "ask_expert", "look_at_screen", "open_canvas", "create_document", "transcribe"]
+                                                 "ask_expert", "look_at_screen", "open_canvas", "create_document", "transcribe",
+                                                 "calculate", "date_calc", "table_summary"]
     private static let notForCode: Set<String> = ["Kalender", "Erinnerungen", "Kontakte", "Mail", "Browser"]
 
     var ideas: [(icon: String, text: String)] {

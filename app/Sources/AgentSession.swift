@@ -105,7 +105,11 @@ final class AgentSession {
     @ObservationIgnored private var reviews = 0
     @ObservationIgnored private var lastReviewFailed = false
     @ObservationIgnored private var nudges = 0
+    /// Rechen-Checks der Antwort in diesem Auftrag (höchstens zwei Korrekturen).
+    @ObservationIgnored private var mathChecks = 0
     @ObservationIgnored private var recentCalls: [String] = []
+    /// Gleiche Fehlermeldungen desselben Werkzeugs in diesem Auftrag – ab der dritten hält die App an.
+    @ObservationIgnored private var repeatedFailures: [String: Int] = [:]
     @ObservationIgnored private var userTask = ""
     /// Namen der in diesem Auftrag erfolgreich genutzten Werkzeuge (für die Erkennung wiederholter Abläufe).
     @ObservationIgnored private var runTools: [String] = []
@@ -282,6 +286,11 @@ final class AgentSession {
         if answeredBefore, tools.contains(where: { $0.name == "learn_lesson" }), LessonStore.isCorrection(text) {
             text += "\n\n(Hinweis der App: Das klingt nach einer Korrektur. Setze sie um. Gilt sie über diese Aufgabe hinaus, halte sie mit learn_lesson als kurze Regel fest.)"
         }
+        // Passt der Auftrag deutlich zu einem Skill? Kleine Modelle übersehen ihn in der langen Liste sonst oft.
+        if !shown.hasPrefix(Checkpoint.continuePrefix), tools.contains(where: { $0.name == "use_skill" }),
+           let skill = Self.matchingSkill(for: shown, in: context.skills) {
+            text += "\n\n(Hinweis der App: Dazu passt vermutlich der Skill „\(skill.name)“ – lade ihn zuerst mit use_skill und folge ihm.)"
+        }
         items.append(Item(kind: .user(shown, images: images)))
         if images.isEmpty {
             history.append(["role": "user", "content": text])
@@ -310,7 +319,9 @@ final class AgentSession {
         reviews = 0
         lastReviewFailed = false
         nudges = 0
+        mathChecks = 0
         recentCalls = []
+        repeatedFailures = [:]
         runTools = []
         repeatedChats = []
         // Fortsetzungen („Mach weiter …“) gehören zum bisherigen Auftrag – der Qualitäts-Check prüft gegen den ursprünglichen.
@@ -364,6 +375,35 @@ final class AgentSession {
                 historyVersion += 1
             }
         }
+    }
+
+    /// Skill, der deutlich zum Auftrag passt: ein markantes Wort aus dem Namen („rechnungen“ in rechnungen-ordnen, als
+    /// Wortstamm) oder ein Auslöser aus der Beschreibung („Rechnungen sortieren“). Allgemeine Verben zählen nicht.
+    /// Erster Satz einer Beschreibung, höchstens `max` Zeichen.
+    nonisolated static func firstSentence(_ text: String, max: Int) -> String {
+        let cut = text.range(of: ". ").map { String(text[..<$0.lowerBound]) } ?? text
+        return cut.count > max ? String(cut.prefix(max - 1)) + "…" : cut
+    }
+
+    nonisolated static func matchingSkill(for text: String, in skills: [Skill]) -> Skill? {
+        let t = text.lowercased().replacingOccurrences(of: "ä", with: "ae").replacingOccurrences(of: "ö", with: "oe")
+            .replacingOccurrences(of: "ü", with: "ue").replacingOccurrences(of: "ß", with: "ss")
+        let generic: Set<String> = ["erstellen", "ersteller", "ordnen", "pruefen", "checken", "schreiben", "helfer", "review",
+                                    "warum", "code", "design", "builder", "creator", "skill", "agent", "tools", "helper"]
+        var best: (skill: Skill, score: Int)?
+        for sk in skills {
+            var score = 0
+            for word in sk.name.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).map(String.init)
+            where word.count >= 5 && !generic.contains(word) {
+                if t.contains(String(word.prefix(max(5, word.count - 2)))) { score += 3 }   // Stamm: „rechnung“
+            }
+            for phrase in sk.description.components(separatedBy: "\"").enumerated().filter({ $0.offset % 2 == 1 }).map(\.element)
+            where phrase.count >= 6 && t.contains(phrase.lowercased()) {
+                score += 3
+            }
+            if score > (best?.score ?? 0) { best = (sk, score) }
+        }
+        return best.flatMap { $0.score >= 3 ? $0.skill : nil }
     }
 
     // MARK: Neu generieren und bearbeiten
@@ -472,6 +512,12 @@ final class AgentSession {
             Du arbeitest als Agent mit Werkzeugen. Arbeitsordner: \(workspace.path)
             - Plane kurz, nutze Werkzeuge gezielt und prüfe Ergebnisse, statt zu raten. Erfinde keine Dateiinhalte oder Fakten.
             - Für aktuelle Informationen: web_search, dann die besten Quellen mit fetch_url lesen und mit Links belegen.
+            - Rechnen nie im Kopf: Beträge, Summen, Prozente mit calculate, Fristen und Wochentage mit date_calc, \
+            Tabellen (Excel/CSV) mit table_summary (alle ohne Freigabe) – Zahlen nie abtippen, Ergebnisse genau so übernehmen.
+            - Genau das Verlangte tun, auf dem kürzesten Weg: keine zusätzlichen Dateien, Prüfskripte oder Web-Abrufe, \
+            die der Auftrag nicht braucht. Jede Datei nur einmal lesen und einmal schreiben.
+            - Keine Pakete installieren (pip, npm, brew …), außer der Nutzer bittet darum. Dokumente (PDF, Word, Excel) \
+            immer mit create_document erzeugen und danach nicht per Skript verändern; zum Prüfen genügt read_file.
             - Erkennst du etwas nur halb (Film/Serie zu einer Adresse oder ID, ein Zitat, ein Produkt, eine Fehlermeldung), \
             schlag es selbst mit web_search nach, bevor du nachfragst oder aufgibst – nicht denselben Bildschirm mehrmals ansehen.
             - Für Code: erst lesen (read_file, search_files, find_files), dann gezielt ändern (edit_file).
@@ -520,7 +566,12 @@ final class AgentSession {
                 if mode == .code {
                     s += "Verfügbar (Name genügt für use_skill): " + context.skills.prefix(40).map(\.name).joined(separator: ", ") + "\n"
                 } else {
-                    for sk in context.skills.prefix(80) { s += "- \(sk.name): \(sk.description.prefix(240))\n" }
+                    // Kurz halten – jedes Zeichen kostet bei jeder Anfrage Speicher. Eigene und mitgelieferte Skills mit
+                    // Beschreibung, Plugin-Skills nur mit Namen; passt ein Auftrag deutlich, nennt die App den Skill ohnehin.
+                    let own = context.skills.filter { $0.source == "KI/lokal" || $0.source == "Eigene" }
+                    for sk in own.prefix(40) { s += "- \(sk.name): \(Self.firstSentence(sk.description, max: 110))\n" }
+                    let others = context.skills.filter { !own.contains($0) }
+                    if !others.isEmpty { s += "Weitere: " + others.prefix(40).map(\.name).joined(separator: ", ") + "\n" }
                 }
             }
             if !context.agents.isEmpty {
@@ -603,12 +654,28 @@ final class AgentSession {
             } catch {
                 // Zu lange Eingabe für den Speicher? Stärker verdichten und den Schritt wiederholen.
                 let message = error.localizedDescription
-                if local, memoryRetries < 2, message.contains("memory guard") || message.contains("Prefill would require") {
+                // Modell wird gerade neu geladen (z. B. von einer parallelen Automation): kurz warten, gleicher Schritt nochmal
+                if local, memoryRetries < 3, message.contains("is being unloaded") || message.contains("is being loaded") {
                     memoryRetries += 1
                     items.removeAll { $0.id == itemID }
-                    compactHistory(budget: memoryRetries == 1 ? 9_000 : 6_500, keepRecent: memoryRetries == 1 ? 3 : 2)
+                    try? await Task.sleep(for: .seconds(8))
+                    continue
+                }
+                if local, memoryRetries < 3, message.contains("memory guard") || message.contains("Prefill would require")
+                    || message.contains("memory limit exceeded") {
+                    memoryRetries += 1
+                    items.removeAll { $0.id == itemID }
+                    if memoryRetries == 1 {
+                        // Zuerst Modell neu laden: Das gibt den Zwischenspeicher der Engine frei (auf 24 GB bleiben neben dem
+                        // Modell sonst oft nur ~0,5 GB zum Einlesen) – und der Verlauf bleibt vollständig. Kürzen erst danach,
+                        // denn gekürzte Werte verleiten kleine Modelle zum Raten.
+                        await LLMClient.unload(model: model)
+                        items.append(Item(kind: .error(Self.qualityPrefix + ": Arbeitsspeicher freigemacht (Modell neu geladen, ~15 s) – es geht weiter.")))
+                        continue
+                    }
+                    compactHistory(budget: memoryRetries == 2 ? 9_000 : 6_500, keepRecent: memoryRetries == 2 ? 3 : 2)
                     injectPlan()
-                    items.append(Item(kind: .error(Self.qualityPrefix + ": Verlauf war zu lang für den Speicher – ältere Schritte gekürzt, es geht weiter." + (memoryRetries == 2 ? " Tipp: „GPU-Speicher erhöhen“ in den Einstellungen gibt dem Modell deutlich mehr Platz." : ""))))
+                    items.append(Item(kind: .error(Self.qualityPrefix + ": Verlauf war zu lang für den Speicher – ältere Schritte gekürzt, es geht weiter.")))
                     continue
                 }
                 if Task.isCancelled && !quitting {
@@ -658,6 +725,14 @@ final class AgentSession {
                 history.append(["role": "user", "content": "(Hinweis der App: Deine letzte Antwort wurde am Längenlimit von \(context.maxTokens) Tokens abgeschnitten; ein begonnener Werkzeug-Aufruf wurde verworfen. Teile große Inhalte auf: Datei zuerst mit write_file und dem ersten Teil anlegen, weitere Teile mit edit_file anhängen. Mach jetzt weiter.)"])
                 continue
             }
+            // Rechen-Check: Steht in der Antwort eine Rechnung, rechnet die App nach („28 × 3/5 = 18“ → 16,8).
+            if calls.isEmpty, mathChecks < 2, let wrong = ArithmeticCheck.firstError(in: text) {
+                mathChecks += 1
+                items.removeAll { $0.id == itemID }
+                items.append(Item(kind: .error(Self.qualityPrefix + ": Rechenfehler gefunden („\(wrong.text)“, richtig: \(wrong.correct)) – der Agent korrigiert.")))
+                history.append(["role": "user", "content": "(Hinweis der App: In deiner Antwort steht „\(wrong.text)“ – richtig ist \(wrong.correct). Korrigiere die Antwort und alles, was darauf aufbaut. Rechne mit calculate.)"])
+                continue
+            }
             if calls.isEmpty {
                 // Nur angekündigt („Ich starte …“, „Lass mich …“), aber nichts getan? Kleine Modelle beenden dann gern
                 // den Zug. Bis zu zweimal erinnern, den Schritt wirklich auszuführen.
@@ -704,6 +779,16 @@ final class AgentSession {
             for call in calls {
                 if Task.isCancelled { return }
                 var result = await execute(call, tools: tools)
+                // Scheitert dasselbe Werkzeug immer wieder mit derselben Meldung, hilft kein weiterer Versuch: anhalten.
+                if result.hasPrefix("Fehler: ") {
+                    let key = call.name + "|" + result.prefix(160)
+                    repeatedFailures[key, default: 0] += 1
+                    if repeatedFailures[key]! >= 3 {
+                        history.append(["role": "tool", "tool_call_id": call.id, "content": result])
+                        items.append(Item(kind: .error("Angehalten: \(call.name) ist dreimal mit derselben Meldung gescheitert – „\(result.dropFirst(8).prefix(200))“. Bisherige Ergebnisse sind gespeichert; schreib, wie es weitergehen soll.")))
+                        return
+                    }
+                }
                 // Schleife? Derselbe Aufruf mit denselben Argumenten zum dritten Mal → Hinweis statt stur weiter
                 let signatur = call.name + "|" + call.arguments
                 recentCalls.append(signatur)
@@ -843,7 +928,7 @@ final class AgentSession {
                   var obj = (try? JSONSerialization.jsonObject(with: Data(a.utf8))) as? [String: Any] else { continue }
             for key in ["content", "new_string", "old_string", "new_text", "old_text"] {   // auch replace_lines.new_text
                 if let v = obj[key] as? String, v.count > 400 {
-                    obj[key] = String(v.prefix(240)) + " …[\(v.count) Zeichen – vollständig in der Datei, bei Bedarf read_file]"
+                    obj[key] = String(v.prefix(240)) + " …[nur hier im Verlauf gekürzt – der Aufruf wurde mit allen \(v.count) Zeichen ausgeführt, die Datei ist vollständig]"
                 }
             }
             if let d = try? JSONSerialization.data(withJSONObject: obj), let s = String(data: d, encoding: .utf8) { f["arguments"] = s }

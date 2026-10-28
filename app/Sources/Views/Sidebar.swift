@@ -43,6 +43,7 @@ struct AppSidebar: View {
         .safeAreaInset(edge: .top, spacing: 0) { header(searching).background(.bar) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
+                if let update = app.updates.available { updateCard(update) }
                 Divider()
                 SidebarMenu(screen: $screen)
             }
@@ -58,6 +59,28 @@ struct AppSidebar: View {
         }
         .sheet(item: $skillFrom) { SkillFromChatSheet(chatID: $0.id, chatTitle: $0.title) }
         .sheet(item: $editing) { ProjectEditor(project: $0) }
+    }
+
+    /// Neue Version verfügbar – laden (DMG im Browser) oder ausblenden.
+    private func updateCard(_ update: UpdateChecker.Release) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Version \(update.version) ist da", systemImage: "arrow.down.circle.fill")
+                    .font(.callout.weight(.semibold)).foregroundStyle(Theme.primary)
+                Spacer()
+                Button { app.updates.dismiss() } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless).foregroundStyle(.secondary).help("Bis zur nächsten Version ausblenden")
+            }
+            HStack(spacing: 8) {
+                Button("Laden") { app.updates.download() }.buttonStyle(.borderedProminent).controlSize(.small)
+                Link("Was ist neu", destination: update.page).font(.caption)
+            }
+            Text("Lädt die DMG – öffnen und KI lokal in „Programme“ ziehen (ersetzt diese Version, Gespräche bleiben).")
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background(Theme.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 8).padding(.bottom, 6)
     }
 
     private func header(_ searching: Bool) -> some View {

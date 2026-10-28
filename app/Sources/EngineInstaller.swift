@@ -8,6 +8,38 @@ final class EngineInstaller {
     /// oMLX-Stand, gegen den der Patch in engine/patches erstellt und getestet wurde.
     static let omlxRepo = "https://github.com/jundot/omlx.git"
     static let omlxCommit = "78fa08bc1aef7290c93c83bb70811547763ebf33"
+    /// Eigene Patches in dieser Reihenfolge (engine/patches, im App-Paket unter Resources/Engine).
+    static let patches = [
+        ("omlx-mtp-per-request", "MTP pro Anfrage (X-oMLX-MTP)"),
+        ("omlx-preflight-prefix-cache", "Speicherprüfung zählt den Prompt-Cache mit (lange Agent-Läufe auf 24 GB)"),
+    ]
+
+    /// Bereits eingerichtete Engine: fehlende eigene Patches nachtragen (nur Python-Dateien, wirkt beim nächsten Start
+    /// der Engine). Liefert die Namen der eingespielten Patches.
+    @discardableResult
+    nonisolated static func applyMissingPatches() -> [String] {
+        let src = prefix.appendingPathComponent("src-omlx")
+        guard FileManager.default.fileExists(atPath: src.appendingPathComponent(".git").path) else { return [] }
+        func git(_ args: [String]) -> Bool {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            p.arguments = ["-C", src.path] + args
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            guard (try? p.run()) != nil else { return false }
+            p.waitUntilExit()
+            return p.terminationStatus == 0
+        }
+        var applied: [String] = []
+        for (name, _) in patches {
+            guard let patch = Bundle.main.url(forResource: name, withExtension: "patch") else { continue }
+            if git(["apply", "--check", "--reverse", "--whitespace=nowarn", patch.path]) { continue }   // schon drin
+            if git(["apply", "--check", "--whitespace=nowarn", patch.path]), git(["apply", "--whitespace=nowarn", patch.path]) {
+                applied.append(name)
+            }
+        }
+        return applied
+    }
 
     private(set) var running = false
     private(set) var log: [String] = []
@@ -57,12 +89,14 @@ final class EngineInstaller {
         try await sh(["git", "fetch", "-q", "--depth", "1", "origin", Self.omlxCommit], in: src)
         try await sh(["git", "checkout", "-q", "-f", "FETCH_HEAD"], in: src)
 
-        step = "3/5 · MTP-Patch anwenden"
-        if let patch = Bundle.main.url(forResource: "omlx-mtp-per-request", withExtension: "patch") {
-            try await sh(["git", "apply", "--whitespace=nowarn", patch.path], in: src)
-            append("Patch angewendet: MTP pro Anfrage (X-oMLX-MTP)")
-        } else {
-            append("Patch nicht im App-Paket gefunden – MTP nur pro Modell")
+        step = "3/5 · Patches anwenden"
+        for (name, what) in Self.patches {
+            if let patch = Bundle.main.url(forResource: name, withExtension: "patch") {
+                try await sh(["git", "apply", "--whitespace=nowarn", patch.path], in: src)
+                append("Patch angewendet: \(what)")
+            } else {
+                append("Patch \(name) nicht im App-Paket gefunden")
+            }
         }
 
         step = "4/5 · Python-Umgebung und Pakete (dauert einige Minuten)"

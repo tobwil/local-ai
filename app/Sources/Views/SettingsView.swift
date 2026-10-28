@@ -217,6 +217,12 @@ struct SettingsView: View {
                 }
                 Text("KI/lokal ist ein Tool von KIsruptiv: KI und Automatisierung verständlich, wirksam und für alle nutzbar machen – hier ganz privat auf deinem Mac.")
                     .font(.callout).foregroundStyle(.secondary)
+                Toggle("Nach neuen Versionen suchen (fragt GitHub nach der neuesten Version, sonst nichts)",
+                       isOn: Binding(get: { app.updates.enabled }, set: { app.updates.enabled = $0 }))
+                HStack {
+                    Button("Jetzt prüfen") { Task { await app.updates.check(force: true) } }
+                    Text(app.updates.lastResult).font(.caption).foregroundStyle(.secondary)
+                }
                 HStack {
                     Link("kisruptiv.de", destination: URL(string: "https://kisruptiv.de")!)
                     Spacer()
@@ -227,7 +233,7 @@ struct SettingsView: View {
 
             Section("Engine") {
                 HStack {
-                    Text(app.server.engineInstalled ? "oMLX eingerichtet (\(EngineInstaller.omlxCommit.prefix(7)) + MTP-Patch)" : "oMLX fehlt")
+                    Text(app.server.engineInstalled ? "oMLX eingerichtet (\(EngineInstaller.omlxCommit.prefix(7)) + \(EngineInstaller.patches.count) Patches)" : "oMLX fehlt")
                     Spacer()
                     Button(app.server.engineInstalled ? "Neu einrichten / reparieren" : "Engine einrichten") { app.installer.install() }
                         .disabled(app.installer.running)

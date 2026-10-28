@@ -6,6 +6,13 @@ KI/lokal holt starke offene Modelle auf Macs mit Apple Silicon – privat, offli
 für den Alltag (≥ 40 tok/s). Gebaut für Macs mit wenig Speicher (ab 24 GB): Die App erkennt die Hardware, empfiehlt das passende Modell, richtet die Engine ein und bringt einen
 Agenten mit Werkzeugen, Skills, Plugins, MCP, Browser-Steuerung, Sprache und Vision mit.
 
+**Wofür KI/lokal gedacht ist:** kurze, klare Aufgaben mit Texten und Dokumenten – lesen, verstehen, zusammenfassen,
+Daten herausziehen, Entwürfe schreiben, Fragen zu eigenen Unterlagen beantworten, Aufnahmen transkribieren. Dabei gilt:
+**Das Modell versteht, die App rechnet und handelt.** Summen und Beträge in Tabellen rechnet KI/lokal selbst aus (der
+Agent schreibt Formeln, keine Zahlen), Dateien ändert es nur über eigene Werkzeuge mit Freigabe. Lange, verschachtelte
+Aufträge über viele Schritte und große Programmierprojekte sind auf einem 24-GB-Mac nicht zuverlässig – dafür ist der
+Cloud-Experte da. Die [Demos](demos/README.md) zeigen nur, was in drei von drei Läufen richtig war.
+
 ⚖️ **[Ehrliche Einordnung](docs/EINORDNUNG.md)** – Vor- und Nachteile, reale Anwendungsszenarien und der Vergleich mit
 ChatGPT, Claude, Gemini und Microsoft Copilot. Kurz: für einen großen Teil der Alltagsarbeit eine echte Alternative,
 für die schwersten Aufgaben nicht – am besten hybrid.
@@ -207,17 +214,23 @@ app/Scripts/make-dmg.sh                    # signierte DMG (Developer ID, Harden
 
 Daten liegen unter `~/.kilokal/` (Engine, Modelle, Skills, Plugins, Gespräche, Gedächtnis, Wissensindex, Automationen, Protokoll).
 
-## Demo: Stadtflitzer 3D
+## Demos für den Alltag
 
-Ferngesteuerte Spielzeugautos (wie Re-Volt) durch **echte Innenstädte** – München, Hamburg, Berlin, Köln – mit Gebäuden aus
-OpenStreetMap, Wahrzeichen, Power-ups und drei Computer-Gegnern. `demos/stadtflitzer-3d/index.html` per Doppelklick öffnen
-(ohne Server, ohne Internet). Entstanden in einer Nacht mit dem lokalen Agenten und Claude – wer was gebaut hat und was
-KI/lokal dabei gelernt hat: [demos/stadtflitzer-3d/README.md](demos/stadtflitzer-3d/README.md).
+Echte Büroaufgaben mit Beispieldateien – und dem Ergebnis, das KI/lokal auf einem MacBook Air M4 (24 GB) offline erzeugt hat:
+**[demos/](demos/README.md)**
 
-![Stadtflitzer 3D](docs/bilder/spiel-rennen.png)
+| Demo | Was passiert |
+|---|---|
+| [Rechnungen ordnen](demos/rechnungen-ordnen/) | PDF-Rechnungen → einheitlich benannt, nach Monat sortiert, Excel-Übersicht mit Summen |
+| [Angebot schreiben](demos/angebot-schreiben/) | Kundenmail + Preisliste → Angebot als Word-Datei mit Budget-Abgleich |
+| [Meeting nachbereiten](demos/meeting-nachbereitung/) | Aufnahme → Protokoll, Aufgaben mit Fristen, Follow-up-Mail |
+| [Umsätze auswerten](demos/umsatz-auswerten/) | Excel → PDF-Bericht mit Gewinn je Bereich und Empfehlungen |
+| [Vertrag durchsehen](demos/vertrag-pruefen/) | Gewerbemietvertrag → Fristen mit Datum, Gesamtkosten, auffällige Klauseln |
+| [Fragen ans Handbuch](demos/handbuch-fragen/) | interne Regeln → Antworten mit Quelle |
+| [Automationen](demos/automationen/) | Morgen-Briefing, Webseite beobachten ohne Modell |
 
 ## Nächste Schritte
 
 1. Review von [jundot/omlx#4851](https://github.com/jundot/omlx/pull/4851) begleiten; nach dem Merge den eigenen Patch entfernen.
-2. Notarisierung einrichten (`xcrun notarytool store-credentials`) und DMG veröffentlichen; Einrichtungs-Assistent beim ersten Start.
-3. 64k Kontext mit angehobenem GPU-Limit messen (Knopf in den Einstellungen, braucht dein Passwort).
+2. 64k Kontext mit angehobenem GPU-Limit messen (Knopf in den Einstellungen, braucht dein Passwort).
+3. Weitere Alltags-Demos und Skills – Vorschläge gern als Issue.

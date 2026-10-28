@@ -35,8 +35,10 @@ Wofür es sich eignet, wo die Grenzen liegen und wie es sich von den Bezahl-Dien
    **Ornith 1.5 35B · 3 Bit**, 16,6 GB, mit Fortschritt) und **Berechtigungen** (Bildschirm, Kalender, Erinnerungen,
    Mikrofon, Spracherkennung, Mitteilungen – jeweils mit Status, *Erlauben* oder *In Einstellungen öffnen*). Später
    erreichbar über das Menü unten links → *Einrichtung & Berechtigungen*.
-3. **Loslegen:** einfach schreiben. Läuft die Engine noch nicht, startet KI/lokal sie beim Abschicken selbst
+3. **Loslegen:** einfach schreiben – oder eine der [Demos für den Alltag](../demos/README.md) ausprobieren. Läuft die Engine noch nicht, startet KI/lokal sie beim Abschicken selbst
    (beim ersten Mal lädt das Modell ~20–30 s, danach antwortet es nach 1–4 s).
+4. **Updates:** Gibt es eine neue Version, erscheint unten in der Seitenleiste *„Version … ist da“* mit **Laden**.
+   DMG öffnen, KI lokal in „Programme“ ziehen – Gespräche und Einstellungen bleiben.
 
 ![Einrichtung](bilder/einrichtung.png)
 
@@ -343,6 +345,8 @@ Weitere Schalter: `--weiter` (im offenen Gespräch weitermachen statt ein neues 
 - Cloud-Modelle (Claude, OpenAI-kompatibel) und `ask_expert` sind optional und klar markiert („Daten verlassen den Mac“).
 - Schlüssel liegen im Schlüsselbund von macOS. Die Engine lauscht ohne Heimnetz-Freigabe nur auf `127.0.0.1`.
 - Mails werden nur als Entwurf angelegt, nie selbst gesendet.
+- **Update-Prüfung:** Die App fragt GitHub nach der neuesten Version (nur die Release-Liste, keine Daten über dich).
+  Abschaltbar unter Einstellungen → Über.
 
 ## 14. Wenn etwas hakt
 

@@ -58,7 +58,7 @@ enum ScreenCapture {
     @MainActor
     static func lookTool(visionModel: @escaping @MainActor () -> String?, mainModel: @escaping @MainActor () -> String) -> AgentTool {
         AgentTool(name: "look_at_screen",
-                  description: "Macht ein Bildschirmfoto des Hauptbildschirms und lässt ein Vision-Modell eine Frage dazu beantworten (z. B. „Was steht in der Fehlermeldung?“).",
+                  description: "Macht ein Bildschirmfoto des Hauptbildschirms und lässt ein Vision-Modell eine Frage dazu beantworten (z. B. „Was steht in der Fehlermeldung?“). Nur für das, was gerade auf dem Bildschirm zu sehen ist – Dateien immer mit read_file lesen.",
                   parameters: schema([("question", "string", "Was soll auf dem Bildschirm geprüft oder beschrieben werden?")],
                                      required: ["question"]),
                   needsApproval: true, source: "Bildschirm") { args in

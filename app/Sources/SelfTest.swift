@@ -118,6 +118,115 @@ enum SelfTest {
             return "Word ✓ · Excel geschrieben und wieder gelesen ✓ · CSV ✓ · ZIP entpackt ✓"
         }) { failed += 1 }
 
+        if !(await check("Excel: Zahlen, Euro, Datum, Formeln") {
+            let cases: [(String, Double?, Bool)] = [("1.234,56 €", 1234.56, true), ("186,33 €", 186.33, true), ("18.09.2026", nil, false),
+                                                    ("42", 42, false), ("3.5", 3.5, false), ("K-20391", nil, false), ("12:30", nil, false)]
+            for (text, want, euro) in cases {
+                let got = OfficeFiles.cellNumber(text)
+                guard got?.0 == want, (got?.1 ?? false) == euro else { throw ToolError.invalid("\(text) → \(String(describing: got))") }
+            }
+            let url = tmp.appendingPathComponent("summen.xlsx")
+            try OfficeFiles.writeXLSX(markdown: "| Datum | Betrag |\n|---|---|\n| 18.09.2026 | 59,00 € |\n| 12.09.2026 | 186,33 € |\n| **Summe** | **=SUM(B2:B3)** |", to: url)
+            let back = OfficeFiles.xlsxText(url) ?? ""
+            guard back.contains("18.09.2026") else { throw ToolError.invalid("Datum verloren: \(back.prefix(200))") }
+            let sheet = try String(contentsOf: try OfficeFiles.unpack(url).appendingPathComponent("xl/worksheets/sheet1.xml"), encoding: .utf8)
+            guard sheet.contains("<f>SUM(B2:B3)</f><v>245.33</v>") else { throw ToolError.invalid("Formel oder Wert fehlt: \(sheet.suffix(300))") }
+            guard back.contains("=SUM(B2:B3) → 245.33") else { throw ToolError.invalid("Formel beim Lesen unsichtbar: \(back.prefix(300))") }
+            return "\(cases.count) Zellen richtig erkannt, Datum bleibt Text, Summe als Formel mit Wert (245,33)"
+        }) { failed += 1 }
+
+        if !(await check("App rechnet: Formeln in Word-Tabellen") {
+            let md = """
+            | Pos. | Leistung | Menge | Einzelpreis | Gesamt |
+            |---|---|---|---|---|
+            | 1 | Workshop | 1 | 1.490,00 € | =C2*D2 |
+            | 2 | Zusätzliche Teilnehmende | 2 | 90,00 € | =C3*D3 |
+            | 3 | Einrichtung | 4 | 190,00 € | =C4*D4 |
+            | 4 | Support | 1 | 690,00 € | =C5*D5 |
+            | 5 | Anfahrt (km) | 190 | 0,50 € | =C6*D6 |
+            | | **Zwischensumme** | | | **=SUM(E2:E6)** |
+            | | Rabatt 5 % | | | =-E7*0,05 |
+            | | **Netto** | | | **=E7+E8** |
+            | | USt 19 % | | | =E9*0.19 |
+            | | **Brutto** | | | **=E9+E10** |
+            """
+            let r = TableFormulas.apply(md, replace: true)
+            for want in ["**3.215,00 €**", "-160,75 €", "**3.054,25 €**", "580,31 €", "**3.634,56 €**"] {
+                guard r.markdown.contains(want) else { throw ToolError.invalid("\(want) fehlt:\n\(r.markdown)") }
+            }
+            guard r.values.contains("Brutto · Gesamt = 3.634,56 €") else { throw ToolError.invalid("Rückmeldung: \(r.values)") }
+            guard OfficeFiles.evaluate("1+*2", value: { _, _ in nil }) == nil, OfficeFiles.evaluate("(2+3)*4", value: { _, _ in nil }) == 20 else {
+                throw ToolError.invalid("Rechner")
+            }
+            // Summenzeilen baut die App: Rechnungsübersicht je Monat, Angebot mit Rabatt und USt
+            let invoices = """
+            | Datum | Firma | Brutto |
+            |---|---|---|
+            | 18.09.2026 | Hotel am Rheinufer | 298,00 € |
+            | 01.10.2026 | Pixelwerk | 71,39 € |
+            | 03.09.2026 | Funkwerk | 59,00 € |
+            | 12.09.2026 | Büromarkt Weber | 186,33 € |
+            | 15.09.2026 | Schienenreise24 | 139,90 € |
+            | 05.10.2026 | Stadtwerke | 145,00 € |
+            """
+            let inv = TableFormulas.apply(TableFormulas.addTotals(invoices, spec: ["sum": ["Brutto"], "per_month": true]), replace: true)
+            for want in ["Summe September 2026 · Brutto = 683,23 €", "Summe Oktober 2026 · Brutto = 216,39 €", "Gesamt · Brutto = 899,62 €"] {
+                guard inv.values.contains(want) else { throw ToolError.invalid("Monatssummen: \(inv.values)\n\(inv.markdown)") }
+            }
+            let offer = """
+            | Pos. | Leistung | Menge | Einzelpreis | Gesamt |
+            |---|---|---|---|---|
+            | 1 | Workshop | 1 | 1.490,00 € | 1.490,00 € |
+            | 2 | Zusätzliche Teilnehmende | 2 | 90,00 € | 180,00 € |
+            | 3 | Einrichtung | 4 | 190,00 € | 760,00 € |
+            | 4 | Support | 1 | 690,00 € | 690,00 € |
+            | 5 | Anfahrt (km) | 190 | 0,50 € | 9.999,00 € |
+            """
+            let off = TableFormulas.apply(TableFormulas.addTotals(offer, spec: ["line": ["Menge", "Einzelpreis", "Gesamt"], "sum": ["Gesamt"],
+                                                                               "discount_percent": 5, "vat_percent": 19]), replace: true)
+            guard off.values.contains("Netto · Gesamt = 3.054,25 €"), off.values.contains("Brutto · Gesamt = 3.634,56 €") else {
+                throw ToolError.invalid("Angebot: \(off.values)\n\(off.markdown)")
+            }
+            let math = BuiltinTools.math { tmp }
+            func tool(_ n: String) -> AgentTool { math.first { $0.name == n }! }
+            let calc = try await tool("calculate").run(["expressions": ["(1846+520+60)*60", "28*3/5"]])
+            let date = try await tool("date_calc").run(["date": "31.12.2031", "months": -12])
+            try "Monat;Bereich;Umsatz;Kosten\nJan;Workshops;8746;2418\nJan;Beratung;6145;1097\nFeb;Workshops;8634;2604\nFeb;Beratung;5736;1184\n"
+                .write(to: tmp.appendingPathComponent("umsatz.csv"), atomically: true, encoding: .utf8)
+            let table = try await tool("table_summary").run(["path": "umsatz.csv", "group_by": "Bereich", "derived": ["Gewinn = Umsatz - Kosten"]])
+            guard table.contains("| Workshops | 17.380 | 5.022 | 12.358 |"), table.contains("| **Gesamt** | 29.261 | 7.303 | 21.958 |") else {
+                throw ToolError.invalid("table_summary: \(table)")
+            }
+            let a = ArithmeticCheck.firstError(in: "Also 28 × 3/5 = 18 Tage.")
+            let b = ArithmeticCheck.firstError(in: "28 × 3/5 = 16,8 Tage, also rund 17. Dazu 1.490 + 180 = 1.670 €.")
+            let c = ArithmeticCheck.firstError(in: "Termin 10:30, Raum 3-5, am 01.01.2027.")
+            guard a?.correct == "16,8", b == nil, c == nil else {
+                throw ToolError.invalid("Rechen-Check: \(String(describing: a)) · \(String(describing: b)) · \(String(describing: c))")
+            }
+            guard calc.contains("= 145.560"), calc.contains("= 16,8"), date.contains("→ 31.12.2030 (Dienstag)") else {
+                throw ToolError.invalid("Rechenwerkzeuge: \(calc) · \(date)")
+            }
+            return "calculate 145.560 / 16,8 · date_calc 31.12.2030 (Dienstag) · table_summary Gewinn je Bereich · Rechen-Check findet 28 × 3/5 = 18 · Formeln: Netto 3.054,25 € → Brutto 3.634,56 € · Summen von der App: September 683,23 €, Oktober 216,39 €, gesamt 899,62 €; falscher Zeilenbetrag (9.999 €) neu gerechnet"
+        }) { failed += 1 }
+
+        if !(await check("Skill-Zuordnung für Alltagsaufträge") {
+            guard let root = Bundle.main.url(forResource: "Skills", withExtension: nil) else { throw ToolError.invalid("Skills fehlen im Bundle") }
+            let skills = Skill.load(in: root, source: "KI/lokal")
+            let cases: [(String, String?)] = [
+                ("Ordne die Rechnungen in diesem Ordner und leg eine Excel-Übersicht an.", "rechnungen-ordnen"),
+                ("Schreib aus der Kundenanfrage und der Preisliste ein Angebot als Word-Datei.", "angebot-erstellen"),
+                ("Bereite das Teammeeting (teammeeting.m4a) nach.", "meeting-nachbereitung"),
+                ("Geh den Gewerbemietvertrag durch: Fristen und Kosten.", "vertrag-checken"),
+                ("Warum kann ein 35B-Modell auf dem MacBook Air laufen?", nil),
+                ("Schreib mir Code für eine Pomodoro-Uhr.", nil),
+            ]
+            for (task, want) in cases {
+                let got = AgentSession.matchingSkill(for: task, in: skills)?.name
+                guard got == want else { throw ToolError.invalid("„\(task)“ → \(got ?? "kein Skill") statt \(want ?? "kein Skill")") }
+            }
+            return "\(cases.count) Aufträge richtig zugeordnet (\(skills.count) Skills)"
+        }) { failed += 1 }
+
         if !(await check("Transkription (lokal)") {
             let audio = tmp.appendingPathComponent("sprache.aiff")
             let say = Process()
