@@ -78,6 +78,10 @@ enum LLMClient {
                         if payload == "[DONE]" { break }
                         guard let data = payload.data(using: .utf8),
                               let ev = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                        // Fehler mitten im Stream (z. B. Speicherschutz der Engine) – sonst sähe das wie eine leere Antwort aus
+                        if let err = ev["error"] as? [String: Any] {
+                            throw LLMError.http(err["code"] as? Int ?? 500, err["message"] as? String ?? "\(err)")
+                        }
                         if let u = ev["usage"] as? [String: Any],
                            let c = u["completion_tokens"] as? Int {
                             continuation.yield(.usage(prompt: u["prompt_tokens"] as? Int ?? 0, completion: c))
@@ -89,6 +93,10 @@ enum LLMClient {
                                 continuation.yield(.reasoning(r))
                             }
                             if let c = delta["content"] as? String, !c.isEmpty {
+                                // oMLX bricht bei Speichermangel mit einem Text „[Error: Request aborted: …]“ ab
+                                if c.contains("[Error: Request aborted") || c.contains("[Error: ") && c.contains("memory") {
+                                    throw LLMError.http(507, c.trimmingCharacters(in: .whitespacesAndNewlines))
+                                }
                                 continuation.yield(.content(c))
                             }
                             // Tool-Calls kommen in Stücken pro Index.

@@ -68,27 +68,49 @@ enum Documents {
 
     static func tool(_ workspace: @escaping () -> URL, onCreated: @escaping @MainActor (URL) -> Void) -> AgentTool {
         AgentTool(name: "create_document",
-                  description: "Erstellt ein Dokument aus Markdown: PDF (A4, mit Seitenumbrüchen), Word (.docx), Excel (.xlsx – jede Markdown-Tabelle wird ein Tabellenblatt), CSV, RTF oder HTML – im KIsruptiv-Stil. Das Format ergibt sich aus der Dateiendung. Für Berichte, Angebote, Zusammenfassungen, Handouts, Tabellen.",
+                  description: "Erstellt ein Dokument aus Markdown: PDF (A4, mit Seitenumbrüchen), Word (.docx), Excel (.xlsx – jede Markdown-Tabelle wird ein Tabellenblatt), CSV, RTF oder HTML – im KIsruptiv-Stil. Das Format ergibt sich aus der Dateiendung. Für Berichte, Angebote, Zusammenfassungen, Handouts, Tabellen. Beträge nie selbst ausrechnen: In Tabellen Formeln wie in Excel schreiben (=C2*D2, =SUM(E2:E6), =E7*0.19; Kopfzeile ist Zeile 1) – die App rechnet sie aus (Excel behält die Formel, Word/PDF zeigen die Zahl) und meldet die Werte zurück. Beträge als 1.234,56 €; **fett** markiert Summenzeilen.",
                   parameters: schema([("path", "string", "Zieldatei, z. B. bericht.pdf, angebot.docx, kosten.xlsx (relativ zum Arbeitsordner)"),
                                       ("content", "string", "Inhalt als Markdown (# Überschriften, Listen, | Tabellen |, **fett**)"),
-                                      ("title", "string", "Dokumenttitel (optional, sonst erste Überschrift)")],
+                                      ("title", "string", "Dokumenttitel (optional, sonst erste Überschrift)"),
+                                      ("totals", "object", "Summen baut und rechnet die App – keine eigenen Summenzeilen schreiben. Übersicht: {\"sum\": [\"Brutto\"], \"per_month\": true} (Zwischensumme je Monat nach der Spalte Datum, dann Gesamt). Angebot: {\"line\": [\"Menge\", \"Einzelpreis\", \"Gesamt\"], \"sum\": [\"Gesamt\"], \"discount_percent\": 5, \"vat_percent\": 19}.")],
                                      required: ["path", "content"]),
                   needsApproval: true, source: "Dokumente") { args in
             let url = BuiltinTools.resolve(try BuiltinTools.string(args, "path"), in: workspace())
             let markdown = try BuiltinTools.string(args, "content")
             let title = args["title"] as? String
-            try await create(markdown: markdown, title: title, at: url)
+            // Summen-Wunsch des Modells (als Objekt oder als JSON-Text)
+            var totals = args["totals"] as? [String: Any]
+            if totals == nil, let t = args["totals"] as? String, let d = t.data(using: .utf8) {
+                totals = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
+            }
+            // Kleine Modelle schreiben ein fertiges Dokument gern immer wieder neu – ab dem dritten Mal in kurzer Zeit abbrechen.
+            let recent = await DocumentRepeatGuard.shared.note(url.path)
+            if recent > 2 {
+                throw ToolError.invalid("\(url.lastPathComponent) wurde gerade schon \(recent - 1)× vollständig erstellt. Nicht erneut schreiben – fasse das Ergebnis für den Nutzer zusammen.")
+            }
+            let computed = try await create(markdown: totals.map { TableFormulas.addTotals(markdown, spec: $0) } ?? markdown, title: title, at: url)
             await onCreated(url)
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
             var info = "Erstellt: \(url.path) (\(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)))"
             if url.pathExtension.lowercased() == "pdf", let pages = PDFPageCount.of(url) { info += ", \(pages) Seite(n)" }
-            return info + ". Die Vorschau zeigt das Dokument."
+            let rows = markdown.components(separatedBy: "\n").filter { $0.hasPrefix("|") }.count
+            info += " – Inhalt vollständig übernommen (\(markdown.count) Zeichen\(rows > 0 ? ", \(rows) Tabellenzeilen" : ""))"
+            if !computed.isEmpty {
+                info += ". Die App hat die Formeln ausgerechnet – genau diese Werte im Chat nennen, nicht selbst rechnen: "
+                    + computed.prefix(30).joined(separator: "; ")
+            }
+            return info + ". Die Datei ist fertig; nur bei einem konkreten Fehler neu erstellen. Die Vorschau zeigt das Dokument."
         }
     }
 
-    @MainActor
-    static func create(markdown: String, title: String?, at url: URL) async throws {
+    /// Erzeugt das Dokument; Tabellenformeln rechnet die App aus. Liefert die berechneten Werte („Netto · Gesamt = …“).
+    @MainActor @discardableResult
+    static func create(markdown source: String, title: String?, at url: URL) async throws -> [String] {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Excel behält die Formeln (der Schreiber legt den Wert dazu), alle anderen Formate bekommen die Zahlen.
+        let isExcel = ["xlsx", "xlsm"].contains(url.pathExtension.lowercased())
+        let formulas = TableFormulas.apply(source, replace: !isExcel)
+        let markdown = formulas.markdown
         let html = MarkdownHTML.page(markdown, title: title)
         switch url.pathExtension.lowercased() {
         case "pdf":
@@ -121,6 +143,7 @@ enum Documents {
         default:
             throw ToolError.invalid("Unbekanntes Format .\(url.pathExtension) – möglich: pdf, docx, xlsx, csv, rtf, odt, html, md")
         }
+        return formulas.values
     }
 }
 
@@ -296,5 +319,16 @@ enum MarkdownHTML {
 
     static func escape(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+    }
+}
+
+/// Zählt, wie oft eine Datei in den letzten 15 Minuten erstellt wurde (gegen endloses Neuschreiben).
+actor DocumentRepeatGuard {
+    static let shared = DocumentRepeatGuard()
+    private var log: [String: [Date]] = [:]
+    func note(_ path: String) -> Int {
+        let now = Date()
+        log[path] = (log[path] ?? []).filter { now.timeIntervalSince($0) < 900 } + [now]
+        return log[path]!.count
     }
 }

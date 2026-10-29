@@ -30,7 +30,8 @@ func schema(_ params: [Param], required: [String]) -> [String: Any] {
 
 enum BuiltinTools {
     /// Namen der Werkzeuge, die nichts verändern – Sub-Agenten bekommen nur diese.
-    static let readOnly: Set<String> = ["list_directory", "read_file", "find_files", "search_files", "web_search", "fetch_url", "use_skill"]
+    static let readOnly: Set<String> = ["list_directory", "read_file", "find_files", "search_files", "web_search", "fetch_url", "use_skill",
+                                        "calculate", "date_calc", "table_summary"]
 
     static func all(workspace: @escaping () -> URL) -> [AgentTool] {
         files(workspace) + web()
@@ -44,7 +45,7 @@ enum BuiltinTools {
                       description: "Listet Dateien und Ordner eines Verzeichnisses. Pfade relativ zum Arbeitsordner.",
                       parameters: schema([("path", "string", "Verzeichnis, Standard: Arbeitsordner")], required: []),
                       needsApproval: false, source: "Eingebaut") { args in
-                let url = resolve(args["path"] as? String ?? ".", in: workspace())
+                let url = locate(resolve(args["path"] as? String ?? ".", in: workspace()), in: workspace())
                 let items = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey])
                 return items.sorted { $0.lastPathComponent < $1.lastPathComponent }.prefix(400).map { u in
                     let v = try? u.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
@@ -52,16 +53,22 @@ enum BuiltinTools {
                 }.joined(separator: "\n")
             },
             AgentTool(name: "read_file",
-                      description: "Liest eine Textdatei mit Zeilennummern, optional nur einen Zeilenbereich. PDFs werden als Text gelesen.",
+                      description: "Liest eine Datei mit Zeilennummern, optional nur einen Zeilenbereich. PDF, Word (.docx), Excel (.xlsx), PowerPoint und RTF werden als Text gelesen.",
                       parameters: schema([("path", "string", "Dateipfad"),
                                           ("start_line", "integer", "Erste Zeile (ab 1)"),
                                           ("end_line", "integer", "Letzte Zeile")], required: ["path"]),
                       needsApproval: false, source: "Eingebaut") { args in
-                let url = resolve(try string(args, "path"), in: workspace())
+                let url = locate(resolve(try string(args, "path"), in: workspace()), in: workspace())
                 let text: String
-                if url.pathExtension.lowercased() == "pdf" {
+                let ext = url.pathExtension.lowercased()
+                if ext == "pdf" {
                     guard let doc = PDFDocument(url: url) else { throw ToolError.invalid("PDF nicht lesbar") }
                     text = doc.string ?? ""
+                } else if ["xlsx", "xlsm", "pptx", "docx", "doc", "rtf", "odt"].contains(ext) {
+                    // Word, Excel, PowerPoint & Co. als Text – z. B. um ein gerade erzeugtes Dokument zu prüfen
+                    let extracted = ext == "pptx" ? OfficeFiles.pptxText(url) : ext.hasPrefix("xls") ? OfficeFiles.xlsxText(url) : Store.extract(url)
+                    guard let extracted, !extracted.isEmpty else { throw ToolError.invalid("Kein Text in \(url.lastPathComponent) lesbar") }
+                    text = extracted
                 } else {
                     text = try String(contentsOf: url, encoding: .utf8)
                 }
@@ -130,6 +137,7 @@ enum BuiltinTools {
                       needsApproval: true, source: "Eingebaut") { args in
                 let url = resolve(try string(args, "path"), in: workspace())
                 let old = try string(args, "old_string"), new = try string(args, "new_string")
+                try requireText(url)
                 let text = try String(contentsOf: url, encoding: .utf8)
                 let count = text.components(separatedBy: old).count - 1
                 if count == 1 {
@@ -155,6 +163,7 @@ enum BuiltinTools {
                       needsApproval: true, source: "Eingebaut") { args in
                 let url = resolve(try string(args, "path"), in: workspace())
                 guard let start = int(args["start_line"]), let end = int(args["end_line"]) else { throw ToolError.invalid("start_line und end_line als Zahlen angeben") }
+                try requireText(url)
                 let text = try String(contentsOf: url, encoding: .utf8)
                 var lines = text.components(separatedBy: "\n")
                 guard start >= 1, start <= lines.count + 1, end >= start - 1, end <= lines.count else {
@@ -203,6 +212,32 @@ enum BuiltinTools {
                                          links: args["include_links"] as? Bool ?? false)
             },
         ]
+    }
+
+    /// Pfad nicht gefunden, aber genau eine Datei bzw. ein Ordner dieses Namens im Arbeitsordner? Dann den nehmen –
+    /// kleine Modelle erfinden gern Unterordner („Angebot_und_Auftraege/anfrage.txt“).
+    static func locate(_ url: URL, in workspace: URL) -> URL {
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: url.path), url.path.hasPrefix(workspace.path) || !url.path.hasPrefix("/") else { return url }
+        let name = url.lastPathComponent
+        // Ganz falscher Pfad mit Arbeitsordner-Namen davor („projekt/anfrage.txt“ statt „anfrage.txt“)
+        let direct = workspace.appendingPathComponent(name)
+        if fm.fileExists(atPath: direct.path) { return direct }
+        guard let e = fm.enumerator(at: workspace, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return url }
+        var hits: [URL] = []
+        while let u = e.nextObject() as? URL {
+            if e.level > 4 { e.skipDescendants(); continue }
+            if u.lastPathComponent == name { hits.append(u); if hits.count > 1 { return url } }
+        }
+        return hits.first ?? url
+    }
+
+    /// Word, Excel, PDF & Co. sind keine Textdateien – Änderungen gehen dort nur über ein neues Dokument.
+    static func requireText(_ url: URL) throws {
+        let ext = url.pathExtension.lowercased()
+        if ["docx", "doc", "xlsx", "xlsm", "pptx", "pdf", "rtf", "odt", "pages", "numbers", "key"].contains(ext) {
+            throw ToolError.invalid("\(url.lastPathComponent) ist kein Textformat und lässt sich nicht stellenweise ändern. Für eine geänderte Fassung create_document mit dem vollständigen neuen Markdown aufrufen – nur wenn wirklich nötig.")
+        }
     }
 
     static func resolve(_ path: String, in workspace: URL) -> URL {

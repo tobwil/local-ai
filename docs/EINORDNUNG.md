@@ -16,6 +16,23 @@ Mac, auf dem KI/lokal sinnvoll läuft.
   KI/lokal kann beides: Cloud-Modelle sind wählbar, und der lokale Agent kann einen **Cloud-Experten** nur für eine
   schwierige Teilfrage hinzuziehen.
 
+## Der Zuschnitt: kurze Aufgaben, „das Modell versteht, die App rechnet“
+
+Beim Bau der [Alltags-Demos](../demos/README.md) zeigte sich, wo ein 35B-Modell in 3 Bit auf 24 GB verlässlich ist und wo
+nicht:
+
+| Verlässlich | Nicht verlässlich |
+|---|---|
+| Inhalte lesen und verstehen (Rechnungsdaten, Vertragsklauseln, Gesprächsinhalte) | Rechnen – Summen weichen um Cent-Beträge ab, auch nach richtiger Rechnung im Werkzeug |
+| Texte formulieren, zusammenfassen, übersetzen | Lange Ketten über 15+ Schritte – der Speicher wird knapp, das Modell verzettelt sich |
+| Kurze Aufträge mit einem klaren Ergebnis (2–4 Minuten) | Eigene Ergebnisse kontrollieren – es „verbessert“ fertige Dateien und macht sie schlechter |
+
+Deshalb übernimmt KI/lokal alles, was exakt sein muss: Der Agent schreibt in Tabellen Formeln (=C2*D2, =SUM(E2:E6)),
+die App rechnet sie aus – in Excel bleiben sie Formeln, in Word und PDF stehen die Zahlen – und meldet die Werte zurück,
+damit Chat und Dokument übereinstimmen. Dateien ändert der Agent nur über eigene Werkzeuge, mit Freigabe. Veröffentlicht sind nur
+Demos, die drei von drei Läufen richtig bestanden haben (Rechnungen, Angebot); was das nicht schaffte – Meeting mit
+Fristen, Umsatz-Auswertung, Vertragsprüfung, Handbuch-Fragen –, steht mit Grund in der [Demo-Übersicht](../demos/README.md).
+
 ## Gemessen, nicht geschätzt
 
 | | MacBook Air M4, 24 GB |

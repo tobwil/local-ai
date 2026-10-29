@@ -15,6 +15,7 @@ final class AppState {
     let session = AgentSession()
     let voice = VoiceController()
     let installer = EngineInstaller()
+    let updates = UpdateChecker()
     let knowledge = KnowledgeBase()
     let automations = AutomationCenter()
     let usage = UsageMonitor()
@@ -49,7 +50,15 @@ final class AppState {
         let limitGiB = hw.gpuLimitGB * 1e9 / 1_073_741_824
         server.memoryCeilingGiB = ((limitGiB - 0.05) * 10).rounded(.down) / 10
         BundledSkills.installIfNeeded()
+        // Neue Engine-Patches aus App-Updates nachtragen, bevor die Engine startet
+        let patched = EngineInstaller.applyMissingPatches()
+        if !patched.isEmpty { Task { [server] in if server.state.isUp { await server.restart() } } }
         Task { await DevEnvironment.detect() }
+        // Neue Version auf GitHub? Beim Start und wenn die App nach vorne kommt (höchstens alle 6 Stunden).
+        Task { [updates] in await updates.check() }
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [updates] _ in
+            Task { @MainActor in await updates.check() }
+        }
         session.onFinish = { [weak self] text in
             guard let self else { return }
             if self.talkMode {
@@ -103,7 +112,7 @@ final class AppState {
 
     var agentTools: [AgentTool] {
         let ws = { [session] in session.workspace }
-        var tools: [AgentTool] = []
+        var tools: [AgentTool] = BuiltinTools.math(ws)
         if useBuiltinTools { tools += BuiltinTools.files(ws) }
         if useWebTools { tools += BuiltinTools.web() }
         if settings.browserEnabled { tools += BrowserTools.all() }
@@ -304,7 +313,7 @@ final class AppState {
         let agents = plugins.agents
         let model = selectedModelID
         let ws = session.workspace
-        let readOnly = (BuiltinTools.files { ws } + BuiltinTools.web()).filter { BuiltinTools.readOnly.contains($0.name) }
+        let readOnly = (BuiltinTools.math { ws } + BuiltinTools.files { ws } + BuiltinTools.web()).filter { BuiltinTools.readOnly.contains($0.name) }
         return AgentTool(name: "run_agent",
                          description: "Gibt eine abgeschlossene Teilaufgabe an einen spezialisierten Sub-Agenten (nur lesende Werkzeuge) und liefert dessen Bericht.",
                          parameters: schema([("agent", "string", "Name des Sub-Agenten"), ("task", "string", "Vollständige Aufgabenbeschreibung")],
@@ -369,7 +378,7 @@ final class AppState {
             guard server.state.isUp else { throw ToolError.invalid("Server startet nicht") }
         }
         let ws = { [session] in session.workspace }
-        var tools = (BuiltinTools.files(ws) + BuiltinTools.web()).filter { BuiltinTools.readOnly.contains($0.name) }
+        var tools = (BuiltinTools.math(ws) + BuiltinTools.files(ws) + BuiltinTools.web()).filter { BuiltinTools.readOnly.contains($0.name) }
         tools += SystemTools.all().filter { ["notify", "clipboard_read", "remember"].contains($0.name) }
         if knowledge.chunkCount > 0 { tools.append(knowledge.tool()) }
         if settings.pimEnabled {
